@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vitreous DevUI</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f1117;
+      --surface:   #1a1d27;
+      --surface2:  #22263a;
+      --border:    #2e3350;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --accent:    #6366f1;
+      --success:   #22c55e;
+      --error:     #ef4444;
+      --warning:   #f59e0b;
+      --blue:      #3b82f6;
+      --purple:    #a855f7;
+      --green:     #22c55e;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
+      --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      font-size: 14px;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .logo {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .logo span { color: var(--accent); }
+
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--muted);
+      transition: background 0.3s;
+      flex-shrink: 0;
+    }
+    .status-dot.connected    { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.disconnected { background: var(--error); }
+
+    .status-label {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .header-spacer { flex: 1; }
+
+    .stat-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: var(--muted);
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .stat-pill strong { color: var(--text); font-weight: 600; }
+    .stat-pill.error-rate strong { color: var(--error); }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    .toolbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 24px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .filter-pills {
+      display: flex;
+      gap: 6px;
+    }
+
+    .pill {
+      padding: 4px 12px;
+      border-radius: 20px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .pill:hover { border-color: var(--accent); color: var(--text); }
+    .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+    .pill.command.active  { background: var(--blue);   border-color: var(--blue); }
+    .pill.query.active    { background: var(--green);  border-color: var(--green); }
+    .pill.notification.active { background: var(--purple); border-color: var(--purple); }
+    .pill.success.active  { background: var(--success); border-color: var(--success); }
+    .pill.failure.active  { background: var(--error);   border-color: var(--error); }
+
+    .search-input {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+      padding: 5px 10px;
+      width: 200px;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .search-input::placeholder { color: var(--muted); }
+    .search-input:focus { border-color: var(--accent); }
+
+    .toolbar-spacer { flex: 1; }
+
+    .btn-clear {
+      padding: 4px 12px;
+      border-radius: 6px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+    .btn-clear:hover { border-color: var(--error); color: var(--error); }
+
+    /* ── Main layout ─────────────────────────────────────── */
+    main {
+      display: flex;
+      flex: 1;
+      overflow: hidden;
+    }
+
+    /* ── Trace list ──────────────────────────────────────── */
+    #trace-list {
+      width: 100%;
+      overflow-y: auto;
+      padding: 0;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 80px 24px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty-state .icon { font-size: 32px; opacity: 0.4; }
+    .empty-state p { font-size: 13px; }
+
+    .trace-row {
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      transition: background 0.1s;
+    }
+    .trace-row:hover { background: var(--surface); }
+    .trace-row.expanded { background: var(--surface); }
+
+    .trace-summary {
+      display: grid;
+      grid-template-columns: 28px 80px 1fr 80px 90px 90px;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 24px;
+    }
+
+    .trace-indicator {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .trace-indicator.success { background: var(--success); }
+    .trace-indicator.failure { background: var(--error); }
+
+    .category-badge {
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      text-transform: uppercase;
+      width: fit-content;
+    }
+    .category-badge.command      { background: rgba(59,130,246,0.15);  color: #60a5fa; }
+    .category-badge.query        { background: rgba(34,197,94,0.15);   color: #4ade80; }
+    .category-badge.notification { background: rgba(168,85,247,0.15);  color: #c084fc; }
+
+    .trace-type {
+      font-family: var(--font-mono);
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .trace-duration {
+      font-family: var(--font-mono);
+      font-size: 12px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .trace-time {
+      font-size: 11px;
+      color: var(--muted);
+      text-align: right;
+    }
+
+    .trace-status {
+      font-size: 11px;
+      font-weight: 600;
+      text-align: right;
+    }
+    .trace-status.ok  { color: var(--success); }
+    .trace-status.err { color: var(--error); }
+
+    .cached-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 3px;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      background: rgba(6,182,212,0.15);
+      color: #22d3ee;
+      margin-left: 8px;
+      vertical-align: middle;
+      flex-shrink: 0;
+    }
+
+    /* ── Expanded detail ─────────────────────────────────── */
+    .trace-detail {
+      display: none;
+      padding: 0 24px 20px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .trace-row.expanded .trace-detail { display: block; }
+
+    .detail-tabs {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 16px;
+    }
+    .detail-tab {
+      padding: 8px 16px;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      margin-bottom: -1px;
+    }
+    .detail-tab:hover { color: var(--text); }
+    .detail-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+    .detail-panel { display: none; }
+    .detail-panel.active { display: block; }
+
+    .code-block {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 14px 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.6;
+      overflow-x: auto;
+      white-space: pre;
+      color: #c9d1d9;
+      max-height: 300px;
+      overflow-y: auto;
+    }
+
+    .no-data {
+      font-size: 12px;
+      color: var(--muted);
+      font-style: italic;
+      padding: 8px 0;
+    }
+
+    /* ── Log entries ─────────────────────────────────────── */
+    .log-list { display: flex; flex-direction: column; gap: 4px; }
+
+    .log-entry {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      line-height: 1.5;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+    .log-entry:hover { background: var(--surface2); }
+
+    .log-time { color: var(--muted); flex-shrink: 0; font-size: 11px; }
+    .log-level {
+      flex-shrink: 0;
+      font-weight: 700;
+      font-size: 10px;
+      padding: 1px 5px;
+      border-radius: 3px;
+      letter-spacing: 0.3px;
+    }
+    .log-level.trace    { background: rgba(100,116,139,0.2); color: #94a3b8; }
+    .log-level.debug    { background: rgba(59,130,246,0.15); color: #60a5fa; }
+    .log-level.info     { background: rgba(34,197,94,0.15);  color: #4ade80; }
+    .log-level.warning  { background: rgba(245,158,11,0.15); color: #fbbf24; }
+    .log-level.error    { background: rgba(239,68,68,0.15);  color: #f87171; }
+    .log-level.critical { background: rgba(239,68,68,0.3);   color: #ef4444; }
+    .log-message { color: var(--text); }
+
+    /* ── Error display ───────────────────────────────────── */
+    .error-box {
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.3);
+      border-radius: 6px;
+      padding: 12px 16px;
+      font-family: var(--font-mono);
+      font-size: 12px;
+    }
+    .error-code { color: var(--error); font-weight: 700; margin-bottom: 4px; }
+    .error-message { color: var(--text); }
+
+    /* ── Scrollbar ───────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+  </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<header>
+  <div class="logo">vitre<span>ous</span></div>
+  <div class="status-dot" id="status-dot"></div>
+  <span class="status-label" id="status-label">Connecting…</span>
+  <div class="header-spacer"></div>
+  <div class="stat-pill"><span>Total</span><strong id="stat-total">0</strong></div>
+  <div class="stat-pill error-rate"><span>Errors</span><strong id="stat-errors">0</strong></div>
+  <div class="stat-pill"><span>P50</span><strong id="stat-p50">—</strong></div>
+  <div class="stat-pill"><span>P95</span><strong id="stat-p95">—</strong></div>
+</header>
+
+<!-- ── Toolbar ── -->
+<div class="toolbar">
+  <div class="filter-pills">
+    <button class="pill active" data-filter="all">All</button>
+    <button class="pill command" data-filter="command">Command</button>
+    <button class="pill query" data-filter="query">Query</button>
+    <button class="pill notification" data-filter="notification">Notification</button>
+  </div>
+  <div class="filter-pills">
+    <button class="pill success" data-filter="success">Success</button>
+    <button class="pill failure" data-filter="failure">Failure</button>
+  </div>
+  <input class="search-input" type="text" id="search" placeholder="Search type name…" />
+  <div class="toolbar-spacer"></div>
+  <button class="btn-clear" id="btn-clear">Clear</button>
+</div>
+
+<!-- ── Trace list ── -->
+<main>
+  <div id="trace-list">
+    <div class="empty-state" id="empty-state">
+      <div class="icon">◎</div>
+      <p>Waiting for commands and queries…</p>
+      <p>Send a request from your application to see it appear here.</p>
+    </div>
+  </div>
+</main>
+
+<script>
+  // ── State ──────────────────────────────────────────────────────────────────
+  let allTraces   = [];
+  let activeFilter = 'all';
+  let activeOutcome = 'all';  // 'all' | 'success' | 'failure'
+  let searchText  = '';
+  let expandedId  = null;
+
+  // ── Stats ──────────────────────────────────────────────────────────────────
+  function updateStats() {
+    const total  = allTraces.length;
+    const errors = allTraces.filter(t => !t.isSuccess).length;
+    const durations = allTraces.map(t => t.duration).sort((a, b) => a - b);
+
+    document.getElementById('stat-total').textContent  = total;
+    document.getElementById('stat-errors').textContent = errors;
+
+    if (durations.length > 0) {
+      const p50 = percentile(durations, 50);
+      const p95 = percentile(durations, 95);
+      document.getElementById('stat-p50').textContent = formatDuration(p50);
+      document.getElementById('stat-p95').textContent = formatDuration(p95);
+    } else {
+      document.getElementById('stat-p50').textContent = '—';
+      document.getElementById('stat-p95').textContent = '—';
+    }
+  }
+
+  function percentile(sorted, p) {
+    const idx = Math.floor((p / 100) * sorted.length);
+    return sorted[Math.min(idx, sorted.length - 1)];
+  }
+
+  // ── Filtering ──────────────────────────────────────────────────────────────
+  function filteredTraces() {
+    return allTraces.filter(t => {
+      // category may arrive as a string ("command") or, defensively, as a number (0)
+      const cat = String(t.category ?? '').toLowerCase();
+      if (activeFilter !== 'all' && cat !== activeFilter) return false;
+      if (activeOutcome === 'success' && !t.isSuccess) return false;
+      if (activeOutcome === 'failure' &&  t.isSuccess) return false;
+      if (searchText && !t.messageType?.toLowerCase().includes(searchText)) return false;
+      return true;
+    });
+  }
+
+  // ── Rendering ─────────────────────────────────────────────────────────────
+  function render() {
+    const list   = document.getElementById('trace-list');
+    const empty  = document.getElementById('empty-state');
+    const traces = filteredTraces();
+
+    // Remove existing rows (keep empty-state)
+    list.querySelectorAll('.trace-row').forEach(r => r.remove());
+
+    if (traces.length === 0) {
+      empty.style.display = 'flex';
+      return;
+    }
+    empty.style.display = 'none';
+
+    // Render newest-first
+    const reversed = [...traces].reverse();
+    for (const trace of reversed) {
+      list.appendChild(buildRow(trace));
+    }
+  }
+
+  function buildRow(trace) {
+    const row = document.createElement('div');
+    row.className = 'trace-row' + (trace.id === expandedId ? ' expanded' : '');
+    row.dataset.id = trace.id;
+
+    const cat  = (trace.category ?? 'command').toLowerCase();
+    const ok   = trace.isSuccess;
+    const dur  = formatDuration(trace.duration);
+    const time = formatTime(trace.timestamp);
+
+    row.innerHTML = `
+      <div class="trace-summary">
+        <div class="trace-indicator ${ok ? 'success' : 'failure'}"></div>
+        <div class="category-badge ${cat}">${cat}</div>
+        <div class="trace-type" title="${esc(trace.messageTypeFullName)}">${esc(trace.messageType)}${trace.isCacheHit ? '<span class="cached-badge">Cached</span>' : ''}</div>
+        <div class="trace-duration">${dur}</div>
+        <div class="trace-status ${ok ? 'ok' : 'err'}">${ok ? 'SUCCESS' : 'FAILURE'}</div>
+        <div class="trace-time">${time}</div>
+      </div>
+      <div class="trace-detail">
+        ${buildDetail(trace)}
+      </div>
+    `;
+
+    row.querySelector('.trace-summary').addEventListener('click', () => toggleExpand(trace.id));
+    return row;
+  }
+
+  function buildDetail(trace) {
+    const tabs = [];
+    const panels = [];
+
+    // Input tab
+    tabs.push({ id: 'input', label: 'Input' });
+    panels.push(`<div class="detail-panel active" data-panel="input">
+      ${trace.serializedInput
+        ? `<pre class="code-block">${esc(prettyJson(trace.serializedInput))}</pre>`
+        : '<p class="no-data">No input captured.</p>'}
+    </div>`);
+
+    // Output tab
+    tabs.push({ id: 'output', label: 'Output' });
+    panels.push(`<div class="detail-panel" data-panel="output">
+      ${trace.isSuccess && trace.serializedOutput
+        ? `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`
+        : trace.error
+          ? `<div class="error-box">
+               <div class="error-code">[${esc(trace.error.code)}]</div>
+               <div class="error-message">${esc(trace.error.message)}</div>
+             </div>`
+          : '<p class="no-data">No output.</p>'}
+    </div>`);
+
+    // Logs tab
+    const logCount = (trace.logs ?? []).length;
+    tabs.push({ id: 'logs', label: `Logs${logCount > 0 ? ` (${logCount})` : ''}` });
+    panels.push(`<div class="detail-panel" data-panel="logs">
+      ${buildLogs(trace.logs ?? [])}
+    </div>`);
+
+    const tabHtml = tabs.map((t, i) =>
+      `<div class="detail-tab${i === 0 ? ' active' : ''}" data-tab="${t.id}">${t.label}</div>`
+    ).join('');
+
+    return `
+      <div class="detail-tabs">${tabHtml}</div>
+      <div class="detail-panels">${panels.join('')}</div>
+    `;
+  }
+
+  function buildLogs(logs) {
+    if (logs.length === 0) return '<p class="no-data">No log entries captured.</p>';
+    return `<div class="log-list">
+      ${logs.map(l => `
+        <div class="log-entry">
+          <span class="log-time">${formatTime(l.timestamp)}</span>
+          <span class="log-level ${levelClass(l.level)}">${levelName(l.level)}</span>
+          <span class="log-message">${esc(l.message)}</span>
+        </div>`).join('')}
+    </div>`;
+  }
+
+  // ── Tab switching (delegated) ──────────────────────────────────────────────
+  document.getElementById('trace-list').addEventListener('click', e => {
+    const tab = e.target.closest('.detail-tab');
+    if (!tab) return;
+    e.stopPropagation();
+    const detail = tab.closest('.trace-detail');
+    detail.querySelectorAll('.detail-tab').forEach(t => t.classList.remove('active'));
+    detail.querySelectorAll('.detail-panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    detail.querySelector(`[data-panel="${tab.dataset.tab}"]`)?.classList.add('active');
+  });
+
+  // ── Expand / collapse ─────────────────────────────────────────────────────
+  function toggleExpand(id) {
+    expandedId = expandedId === id ? null : id;
+    render();
+  }
+
+  // ── Filter buttons ────────────────────────────────────────────────────────
+  document.querySelectorAll('[data-filter]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = btn.dataset.filter;
+
+      if (f === 'all' || f === 'command' || f === 'query' || f === 'notification') {
+        document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
+        activeFilter  = f;
+        activeOutcome = 'all';
+        btn.classList.add('active');
+      } else if (f === 'success' || f === 'failure') {
+        if (activeOutcome === f) {
+          activeOutcome = 'all';
+          btn.classList.remove('active');
+        } else {
+          document.querySelectorAll('[data-filter="success"],[data-filter="failure"]')
+            .forEach(b => b.classList.remove('active'));
+          activeOutcome = f;
+          btn.classList.add('active');
+        }
+      }
+
+      render();
+    });
+  });
+
+  document.getElementById('search').addEventListener('input', e => {
+    searchText = e.target.value.toLowerCase().trim();
+    render();
+  });
+
+  document.getElementById('btn-clear').addEventListener('click', () => {
+    allTraces  = [];
+    expandedId = null;
+    updateStats();
+    render();
+  });
+
+  // ── SSE connection ─────────────────────────────────────────────────────────
+  const dot   = document.getElementById('status-dot');
+  const label = document.getElementById('status-label');
+
+  function connect() {
+    const es = new EventSource(location.pathname.replace(/\/?$/, '') + '/events');
+
+    es.onopen = () => {
+      dot.className   = 'status-dot connected';
+      label.textContent = 'Live';
+    };
+
+    es.onmessage = e => {
+      try {
+        const trace = JSON.parse(e.data);
+        // Deduplicate by id (history replay may overlap with live)
+        if (!allTraces.find(t => t.id === trace.id)) {
+          allTraces.push(trace);
+        }
+        updateStats();
+        render();
+      } catch { /* ignore malformed events */ }
+    };
+
+    es.onerror = () => {
+      dot.className   = 'status-dot disconnected';
+      label.textContent = 'Reconnecting…';
+      es.close();
+      setTimeout(connect, 3000);
+    };
+  }
+
+  connect();
+
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  function esc(str) {
+    if (str == null) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function prettyJson(json) {
+    try { return JSON.stringify(JSON.parse(json), null, 2); }
+    catch { return json; }
+  }
+
+  // Duration comes in as a TimeSpan string "00:00:00.0012345" or ticks
+  function formatDuration(raw) {
+    if (raw == null) return '—';
+    // If it's a string like "00:00:00.1234567"
+    if (typeof raw === 'string') {
+      const parts = raw.split(':');
+      if (parts.length === 3) {
+        const ms = (parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])) * 1000;
+        return formatMs(ms);
+      }
+      return raw;
+    }
+    // If it's a number (seconds? ticks?)
+    if (typeof raw === 'number') {
+      // Assume it's .NET ticks (100ns units) if very large, else ms
+      if (raw > 1_000_000) return formatMs(raw / 10_000);
+      return formatMs(raw);
+    }
+    return String(raw);
+  }
+
+  function formatMs(ms) {
+    if (ms < 1)    return `${(ms * 1000).toFixed(0)}µs`;
+    if (ms < 1000) return `${ms.toFixed(1)}ms`;
+    return `${(ms / 1000).toFixed(2)}s`;
+  }
+
+  function formatTime(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-GB', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })
+           + '.' + String(d.getMilliseconds()).padStart(3, '0');
+  }
+
+  const LOG_LEVELS = ['Trace','Debug','Information','Warning','Error','Critical','None'];
+  function levelName(level) {
+    if (typeof level === 'number') return (LOG_LEVELS[level] ?? 'Info').substring(0, 4).toUpperCase();
+    return String(level).substring(0, 4).toUpperCase();
+  }
+  function levelClass(level) {
+    const name  = (typeof level === 'number' ? LOG_LEVELS[level] : level) ?? 'info';
+    const lower = name.toLowerCase();
+    // LogLevel.Information serializes as "information"; CSS class is .info
+    return lower === 'information' ? 'info' : lower;
+  }
+</script>
+</body>
+</html>

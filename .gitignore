@@ -1,0 +1,60 @@
+# ── Build output ──────────────────────────────────────────────────────────────
+bin/
+obj/
+out/
+
+# ── NuGet ─────────────────────────────────────────────────────────────────────
+*.nupkg
+*.snupkg
+.nuget/
+nuget.config.user
+
+# ── .NET user-specific files ──────────────────────────────────────────────────
+*.user
+*.suo
+*.userprefs
+launchSettings.json.user
+
+# ── Secrets (never commit) ────────────────────────────────────────────────────
+**/secrets.json
+**/appsettings.*.json
+!**/appsettings.json
+!**/appsettings.Development.json
+
+# ── Visual Studio ─────────────────────────────────────────────────────────────
+.vs/
+*.rsuser
+*.vsp
+*.vspx
+*.sap
+TestResults/
+[Bb]uild/
+
+# ── JetBrains Rider / ReSharper ───────────────────────────────────────────────
+.idea/
+*.sln.iml
+_ReSharper*/
+*.DotSettings.user
+
+# ── VS Code ───────────────────────────────────────────────────────────────────
+.vscode/
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+
+# ── OS artefacts ──────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── Test results & coverage ───────────────────────────────────────────────────
+TestResults/
+coverage/
+*.trx
+*.coverage
+*.coveragexml
+lcov.info
+
+# ── Publish profiles ──────────────────────────────────────────────────────────
+**/Properties/PublishProfiles/

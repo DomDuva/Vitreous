@@ -1,0 +1,122 @@
+using Scalar.AspNetCore;
+using Vitreous;
+using Vitreous.Abstractions;
+using Vitreous.Caching.Redis;
+using Vitreous.DevUI.Extensions;
+using Vitreous.Sample.Redis.Behaviors;
+using Vitreous.Sample.Redis.Orders;
+using Vitreous.Sample.Redis.Orders.Commands;
+using Vitreous.Sample.Redis.Orders.Notifications;
+using Vitreous.Sample.Redis.Orders.Queries;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// ── Services ──────────────────────────────────────────────────────────────────
+
+builder.Services.AddVitreousHandlers();
+
+// Register the logging pipeline behavior (wraps every command & query)
+builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+
+// Sample infrastructure
+builder.Services.AddSingleton<OrderRepository>();
+
+// Redis-backed caching with full tag-based invalidation support.
+// Connection string is read from ConnectionStrings:Redis in appsettings.json.
+// Default: localhost:6379 — ensure a Redis instance is reachable before starting.
+var redisConnection = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+builder.Services.AddVitreousRedisCaching(o =>
+{
+    o.ConnectionString = redisConnection;
+    o.KeyPrefix        = "vitreous-sample:";
+    o.TagPrefix        = "vtag-sample:";
+});
+
+// OpenAPI document (used by Scalar)
+builder.Services.AddOpenApi();
+
+// DevUI — only in Development
+if (builder.Environment.IsDevelopment())
+    builder.Services.AddVitreousDevUI();
+
+// ── Build ─────────────────────────────────────────────────────────────────────
+
+var app = builder.Build();
+
+// Scalar API reference — only in Development
+if (app.Environment.IsDevelopment())
+{
+    app.MapOpenApi();               // /openapi/v1.json
+    app.MapScalarApiReference();    // /scalar/v1
+    app.UseVitreousDevUI();         // /vitreous
+}
+
+// ── Endpoints ─────────────────────────────────────────────────────────────────
+
+// POST /orders
+app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, IPublisher publisher, CancellationToken ct) =>
+{
+    var result = await sender.Send(
+        new CreateOrderCommand(req.CustomerName, req.Product, req.Quantity), ct);
+
+    if (result.IsFailure)
+        return Results.BadRequest(new { error = result.Error.Code, message = result.Error.Message });
+
+    // Fire-and-forget notification (in real app this might be on a background channel)
+    await publisher.Publish(
+        new OrderCreatedNotification(result.Value, req.CustomerName, req.Product), ct);
+
+    return Results.Created($"/orders/{result.Value}", new { id = result.Value });
+})
+.WithName("CreateOrder")
+.WithSummary("Create a new order")
+.WithDescription("Creates an order for the given customer. Returns 400 if CustomerName is empty or Quantity ≤ 0. Invalidates the orders list cache key and the 'orders' tag on success.")
+.WithTags("Orders");
+
+// GET /orders
+app.MapGet("/orders", async (ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.Send(new ListOrdersQuery(), ct);
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
+        : Results.Problem(result.Error.Message);
+})
+.WithName("ListOrders")
+.WithSummary("List all orders")
+.WithDescription("Returns all orders. Response is cached for 2 minutes under the 'orders' tag.")
+.WithTags("Orders");
+
+// GET /orders/{id}
+app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.Send(new GetOrderQuery(id), ct);
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
+        : Results.NotFound(new { error = result.Error.Code, message = result.Error.Message });
+})
+.WithName("GetOrder")
+.WithSummary("Get an order by ID")
+.WithDescription("Returns 404 with error code NOT_FOUND if the order does not exist. Response is cached for 5 minutes per order ID, tagged with 'orders' and 'order:{id}'.")
+.WithTags("Orders");
+
+// DELETE /orders/{id}
+app.MapDelete("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.Send(new DeleteOrderCommand(id), ct);
+    return result.IsSuccess
+        ? Results.NoContent()
+        : Results.NotFound(new { error = result.Error.Code, message = result.Error.Message });
+})
+.WithName("DeleteOrder")
+.WithSummary("Delete an order by ID")
+.WithDescription("Returns 404 with error code NOT_FOUND if the order does not exist. Atomically invalidates the order's cache entry, the list, and all entries tagged 'orders' via Redis.")
+.WithTags("Orders");
+
+app.Run();
+
+// ── Request models ────────────────────────────────────────────────────────────
+
+public sealed record CreateOrderRequest(string CustomerName, string Product, int Quantity);
+
+// Allow integration tests to reference the implicit Program class
+public partial class Program { }

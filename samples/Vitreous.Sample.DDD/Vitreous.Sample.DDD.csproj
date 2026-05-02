@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vitreous.Sample.DDD</RootNamespace>
+    <AssemblyName>Vitreous.Sample.DDD</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+    <PackageReference Include="Scalar.AspNetCore" />
+    <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
+    <!--
+      The source generator is installed ONLY on this entry-point project.
+      It performs two discovery passes:
+        Pass 1 — syntax nodes in this project's own compilation
+        Pass 2 — metadata scanning of all referenced assemblies that reference Vitreous
+      This means Application and Infrastructure handlers are discovered automatically
+      with zero extra configuration.
+    -->
+    <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+    <ProjectReference Include="..\..\src\Vitreous.DevUI\Vitreous.DevUI.csproj" />
+    <ProjectReference Include="..\Vitreous.Sample.DDD.Application\Vitreous.Sample.DDD.Application.csproj" />
+    <ProjectReference Include="..\Vitreous.Sample.DDD.Infrastructure\Vitreous.Sample.DDD.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,9 @@
+global using FluentAssertions;
+global using Microsoft.Extensions.Caching.Distributed;
+global using Microsoft.Extensions.Logging.Abstractions;
+global using Vitreous;
+global using Vitreous.Abstractions;
+global using Vitreous.Caching.Abstractions;
+global using Vitreous.Caching.Behaviors;
+global using Vitreous.CachingTests.Fakes;
+global using Xunit;
