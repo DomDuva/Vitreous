@@ -185,7 +185,7 @@ app.MapPost("/orders/{id:guid}/shipped", async (Guid id, IPublisher publisher) =
 Pipeline behaviors wrap every dispatch, similar to middleware. Register them as open-generic services after `AddVitreousHandlers()`.
 
 ```csharp
-// Wraps all commands and queries returning Result<TResult>
+// One registration covers commands (void and non-void), queries, and their full pipeline.
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 ```
 
@@ -209,16 +209,34 @@ public sealed class LoggingBehavior<TMessage, TResult>(ILogger<LoggingBehavior<T
 }
 ```
 
-There are two additional behavior interfaces for specialized cases:
+#### Void commands and `Unit`
 
-- `ICommandPipelineBehavior<TCommand>` — wraps void commands (those returning `Result`, not `Result<T>`)
-- `INotificationPipelineBehavior<TNotification>` — wraps notification dispatch
+Void commands (`ICommand`) participate in the **same** `IPipelineBehavior<TMessage, TResult>` pipeline. When a void command is dispatched, `TResult` is resolved as `Unit` — a built-in struct that represents the absence of a meaningful value. The `PipelineExecutor` adapts the handler's `Result` to `Result<Unit>` before the behavior chain runs and converts it back on the way out, so behaviors see a uniform `Result<TResult>` in both cases.
+
+This means a single open-generic registration covers everything:
+
+| Message kind | `TMessage` | `TResult` | Covered by `IPipelineBehavior<,>`? |
+|---|---|---|---|
+| Command with value | `ICommand<TResult>` | e.g. `Guid` | Yes |
+| Void command | `ICommand` | `Unit` | Yes |
+| Query | `IQuery<TResult>` | e.g. `OrderDto` | Yes |
+| Notification | `INotification` | — | No — use `INotificationPipelineBehavior<TNotification>` |
+
+Notifications dispatch to multiple handlers with a fan-out model and no `Result` wrapper, so they remain on their own interface.
+
+```csharp
+// Notification behaviors — registered separately
+builder.Services.AddSingleton(
+    typeof(INotificationPipelineBehavior<>), typeof(NotificationLoggingBehavior<>));
+```
 
 ---
 
 ### Result type
 
 Every handler returns `Result` or `Result<T>`. Results are either a success value or an `Error` — never both.
+
+The special type `Unit` represents the absence of a value and is used as `TResult` in behaviors when a void command is dispatched. You do not use `Unit` directly in handlers — handlers still return `Result` — but you may encounter it in generic behavior constraints.
 
 ```csharp
 // Create
@@ -484,7 +502,7 @@ public sealed record DeleteOrderCommand(Guid OrderId) : ICommand<bool>, IInvalid
 
 Invalidation only runs when the command returns a success result. Cache removal failures are logged as warnings and do not fail the command.
 
-> **Note on `ICommand` vs `ICommand<bool>`:** `CacheInvalidationBehavior` is typed as `IPipelineBehavior<TMessage, TResult>` and therefore handles messages that return `Result<TResult>`. Void commands (`ICommand`) return `Result` and are not intercepted by this behavior. If you need invalidation on a command that has no meaningful return value, make it `ICommand<bool>` and return `true`.
+> **Note on `ICommand` vs `ICommand<bool>`:** `CacheInvalidationBehavior` is typed as `IPipelineBehavior<TMessage, TResult>`. Void commands (`ICommand`) now also participate in this pipeline with `TResult = Unit`, so `IInvalidatesCache` works on void commands too — no need to make the command `ICommand<bool>` purely for cache invalidation.
 
 #### Behavior pipeline order
 

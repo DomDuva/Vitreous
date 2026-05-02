@@ -51,14 +51,14 @@ internal sealed class RedisVitreousCache : IVitreousCache
         VitreousRedisCachingOptions options,
         ILogger<RedisVitreousCache> logger)
     {
-        _redis   = redis;
+        _redis = redis;
         _options = options;
-        _logger  = logger;
+        _logger = logger;
     }
 
     public async ValueTask<(bool Hit, T? Value)> GetAsync<T>(string key, CancellationToken ct = default)
     {
-        var db  = _redis.GetDatabase();
+        var db = _redis.GetDatabase();
         var raw = await db.StringGetAsync(PrefixKey(key));
 
         if (raw.IsNullOrEmpty)
@@ -85,8 +85,8 @@ internal sealed class RedisVitreousCache : IVitreousCache
         CancellationToken ct = default)
     {
         var prefixedKey = PrefixKey(key);
-        var json        = JsonSerializer.Serialize(value, _json);
-        var ttl         = options.AbsoluteExpirationRelativeToNow ?? options.SlidingExpiration;
+        var json = JsonSerializer.Serialize(value, _json);
+        var ttl = options.AbsoluteExpirationRelativeToNow ?? options.SlidingExpiration;
 
         var db = _redis.GetDatabase();
 
@@ -99,7 +99,7 @@ internal sealed class RedisVitreousCache : IVitreousCache
         // Register the key under each tag Set so it can be bulk-removed later
         if (tags.Count > 0)
         {
-            var batch   = db.CreateBatch();
+            var batch = db.CreateBatch();
             var pending = new List<Task>(tags.Count);
 
             foreach (var tag in tags)
@@ -115,8 +115,8 @@ internal sealed class RedisVitreousCache : IVitreousCache
 
     public async ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
     {
-        var db      = _redis.GetDatabase();
-        var tagKey  = PrefixTag(tag);
+        var db = _redis.GetDatabase();
+        var tagKey = PrefixTag(tag);
         var removed = (int)await db.ScriptEvaluateAsync(RemoveByTagScript, new RedisKey[] { tagKey });
 
         _logger.LogDebug(

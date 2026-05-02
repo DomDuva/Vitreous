@@ -10,9 +10,11 @@ public delegate ValueTask<Result<TResult>> MessageHandlerDelegate<TMessage, TRes
     TMessage message, CancellationToken ct);
 
 /// <summary>
-/// A delegate representing the next step in a command pipeline for void commands.
+/// A delegate representing the terminal step of a void-command pipeline.
+/// The handler still returns the non-generic <see cref="Result"/>; the executor adapts it
+/// to <c>Result&lt;Unit&gt;</c> before passing it through behaviors.
 /// </summary>
-/// <typeparam name="TCommand">The command type.</typeparam>
+/// <typeparam name="TCommand">The void command type.</typeparam>
 public delegate ValueTask<Result> CommandHandlerDelegate<TCommand>(
     TCommand command, CancellationToken ct);
 
@@ -24,10 +26,18 @@ public delegate ValueTask NotificationHandlerDelegate<TNotification>(
     TNotification notification, CancellationToken ct);
 
 /// <summary>
-/// Cross-cutting behavior that wraps the dispatch of a command or query returning <typeparamref name="TResult"/>.
+/// Cross-cutting behavior that wraps the dispatch of any message:
+/// commands returning <typeparamref name="TResult"/>, queries, and void commands
+/// (where <typeparamref name="TResult"/> is <see cref="Unit"/>).
 /// </summary>
-/// <typeparam name="TMessage">The command or query type (<see cref="ICommand{TResult}"/> or <see cref="IQuery{TResult}"/>).</typeparam>
-/// <typeparam name="TResult">The success value type.</typeparam>
+/// <typeparam name="TMessage">
+/// The command or query type (<see cref="ICommand{TResult}"/>, <see cref="IQuery{TResult}"/>,
+/// or <see cref="ICommand"/> for void commands, in which case <typeparamref name="TResult"/>
+/// is <see cref="Unit"/>).
+/// </typeparam>
+/// <typeparam name="TResult">
+/// The success value type, or <see cref="Unit"/> for void commands.
+/// </typeparam>
 public interface IPipelineBehavior<TMessage, TResult>
 {
     /// <summary>
@@ -36,22 +46,6 @@ public interface IPipelineBehavior<TMessage, TResult>
     ValueTask<Result<TResult>> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResult> next,
-        CancellationToken ct = default);
-}
-
-/// <summary>
-/// Cross-cutting behavior that wraps the dispatch of a void command.
-/// </summary>
-/// <typeparam name="TCommand">The command type (<see cref="ICommand"/>).</typeparam>
-public interface ICommandPipelineBehavior<TCommand>
-    where TCommand : ICommand
-{
-    /// <summary>
-    /// Executes this behavior step, calling <paramref name="next"/> to continue the pipeline.
-    /// </summary>
-    ValueTask<Result> Handle(
-        TCommand command,
-        CommandHandlerDelegate<TCommand> next,
         CancellationToken ct = default);
 }
 

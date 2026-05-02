@@ -47,6 +47,7 @@ internal sealed class ReflectionSender : ISender
         CommandHandlerDelegate<ICommand> terminal =
             (cmd, token) => (ValueTask<Result>)handleMethod.Invoke(handler, [cmd, token])!;
 
+        // Void commands participate in the standard IPipelineBehavior<TCommand, Unit> pipeline.
         var behaviors = GetVoidBehaviors(_services);
         return PipelineExecutor.ExecuteVoid(command, terminal, behaviors, ct);
     }
@@ -78,7 +79,7 @@ internal sealed class ReflectionSender : ISender
         IServiceProvider services) =>
         services.GetServices<IPipelineBehavior<TMessage, TResult>>();
 
-    private static IEnumerable<ICommandPipelineBehavior<ICommand>> GetVoidBehaviors(
+    private static IEnumerable<IPipelineBehavior<ICommand, Unit>> GetVoidBehaviors(
         IServiceProvider services) =>
-        services.GetServices<ICommandPipelineBehavior<ICommand>>();
+        services.GetServices<IPipelineBehavior<ICommand, Unit>>();
 }

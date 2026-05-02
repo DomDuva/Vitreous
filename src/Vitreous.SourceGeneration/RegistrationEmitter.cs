@@ -183,7 +183,7 @@ internal static class RegistrationEmitter
         sb.AppendLine("        where TCommand : ICommand");
         sb.AppendLine("    {");
         sb.AppendLine("        var handler = _services.GetRequiredService<ICommandHandler<TCommand>>();");
-        sb.AppendLine("        var behaviors = _services.GetServices<ICommandPipelineBehavior<TCommand>>();");
+        sb.AppendLine("        var behaviors = _services.GetServices<IPipelineBehavior<TCommand, Unit>>();");
         sb.AppendLine("        CommandHandlerDelegate<TCommand> terminal = handler.Handle;");
         sb.AppendLine("        return PipelineExecutor.ExecuteVoid(command, terminal, behaviors, ct);");
         sb.AppendLine("    }");

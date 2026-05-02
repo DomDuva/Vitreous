@@ -157,7 +157,7 @@ public sealed class PipelineExecutorTests
         await PipelineExecutor.ExecuteVoid(
             new TestVoidCommand(),
             VoidTerminal(log),
-            new ICommandPipelineBehavior<TestVoidCommand>[]
+            new IPipelineBehavior<TestVoidCommand, Unit>[]
             {
                 new VoidOrderBehavior(log, "B1"),
                 new VoidOrderBehavior(log, "B2"),
@@ -240,11 +240,11 @@ public sealed class PipelineExecutorTests
     }
 
     private sealed class VoidOrderBehavior(List<string> log, string name)
-        : ICommandPipelineBehavior<TestVoidCommand>
+        : IPipelineBehavior<TestVoidCommand, Unit>
     {
-        public async ValueTask<Result> Handle(
+        public async ValueTask<Result<Unit>> Handle(
             TestVoidCommand command,
-            CommandHandlerDelegate<TestVoidCommand> next,
+            MessageHandlerDelegate<TestVoidCommand, Unit> next,
             CancellationToken ct)
         {
             log.Add($"{name}:before");

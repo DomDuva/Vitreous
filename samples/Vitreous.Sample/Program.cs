@@ -17,7 +17,8 @@ var builder = WebApplication.CreateBuilder(args);
 // registers the fallback sender/publisher (overridden by the generated dispatcher).
 builder.Services.AddVitreousHandlers();
 
-// Register the logging pipeline behavior (wraps every command & query)
+// Register the logging pipeline behavior (wraps every command, query, and void command)
+// When TResult = Unit the behavior is applied to void commands (ICommand) automatically.
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
 // Sample infrastructure

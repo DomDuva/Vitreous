@@ -4,8 +4,13 @@ using Vitreous.Abstractions;
 namespace Vitreous.Sample.DDD.Behaviors;
 
 /// <summary>
-/// Example pipeline behavior: logs the message type and duration for every command/query.
-/// Demonstrates how to write a cross-cutting behavior in Vitreous.
+/// Example pipeline behavior: logs the message type and duration for every dispatch.
+/// <para>
+/// Registered as an open-generic <c>IPipelineBehavior&lt;,&gt;</c>, this single class covers
+/// commands returning a value, queries, <em>and</em> void commands — for void commands
+/// <typeparamref name="TResult"/> is <see cref="Unit"/> and <c>result.IsSuccess</c> /
+/// <c>result.Error</c> work exactly the same way.
+/// </para>
 /// </summary>
 public sealed class LoggingBehavior<TMessage, TResult> : IPipelineBehavior<TMessage, TResult>
 {
