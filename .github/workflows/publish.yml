@@ -5,12 +5,12 @@ name: Publish to NuGet
 on:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'   # pre-release tags: v0.2.0-beta.1
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*" # pre-release tags: v0.2.0-beta.1
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Git tag to publish (e.g. v0.1.0). The tag must already exist.'
+        description: "Git tag to publish (e.g. v0.1.0). The tag must already exist."
         required: true
 
 jobs:
@@ -24,13 +24,13 @@ jobs:
       - name: Checkout (full history for MinVer)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # MinVer needs the full git history to compute versions from tags
-          ref: ${{ inputs.tag || github.ref }}   # for workflow_dispatch: check out the specified tag
+          fetch-depth: 0 # MinVer needs the full git history to compute versions from tags
+          ref: ${{ inputs.tag || github.ref }} # for workflow_dispatch: check out the specified tag
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.x'
+          dotnet-version: "10.x"
 
       - name: Restore dependencies
         run: dotnet restore
@@ -42,7 +42,10 @@ jobs:
         run: dotnet test --configuration Release --no-build --verbosity minimal
 
       - name: Pack
-        run: dotnet pack --configuration Release --no-build --output ./artifacts
+        run: |
+          for proj in src/**/*.csproj; do
+            dotnet pack "$proj" --configuration Release --no-build --output ./artifacts
+          done
 
       - name: Push packages to NuGet.org
         run: |
