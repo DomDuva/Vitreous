@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Vitreous.Abstractions;
 
 namespace Vitreous.Internal;
@@ -6,6 +7,13 @@ namespace Vitreous.Internal;
 /// Sequential, fail-fast <see cref="IPublisher"/> implementation.
 /// Handlers are invoked one after another; the first failure stops the chain.
 /// </summary>
+/// <remarks>
+/// This type is <see langword="public"/> solely because the source-generated
+/// <c>VitreousDispatcher</c> resolves it by concrete type via
+/// <c>GetRequiredService&lt;SequentialPublisher&gt;()</c>. It is not intended
+/// for direct use by application code.
+/// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public sealed class SequentialPublisher : IPublisher
 {
     private readonly IServiceProvider _services;

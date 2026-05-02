@@ -1,11 +1,11 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
+    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
     <RootNamespace>Vitreous.DevUI</RootNamespace>
     <AssemblyName>Vitreous.DevUI</AssemblyName>
     <Description>Developer UI for Vitreous — real-time command/query observability dashboard via Server-Sent Events.</Description>
-    <PackageTags>mediator;devtools;devui;sse;observability</PackageTags>
+    <PackageTags>mediator;devtools;devui;sse;observability;dashboard</PackageTags>
     <IsPackable>true</IsPackable>
     <!-- Allow the ASP.NET Core framework ref; workloads may vary across environments -->
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
@@ -22,6 +22,10 @@
   <!-- Embed the single-file UI as an assembly resource -->
   <ItemGroup>
     <EmbeddedResource Include="wwwroot\index.html" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
   </ItemGroup>
 
 </Project>

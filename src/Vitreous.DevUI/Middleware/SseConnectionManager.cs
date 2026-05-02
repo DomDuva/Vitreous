@@ -70,16 +70,15 @@ public sealed class SseConnectionManager : IDisposable
 /// </summary>
 public sealed class SseSubscription : IDisposable
 {
-    private readonly Guid _id;
     private readonly Action _onDispose;
 
     public ChannelReader<string> Reader { get; }
 
     internal SseSubscription(Guid id, ChannelReader<string> reader, Action onDispose)
     {
-        _id       = id;
-        Reader    = reader;
+        Reader     = reader;
         _onDispose = onDispose;
+        _ = id; // id is captured by the onDispose closure in SseConnectionManager.Subscribe
     }
 
     public void Dispose() => _onDispose();

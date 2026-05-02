@@ -5,12 +5,22 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <WarningsAsErrors />
-    <Authors>Vitreous Contributors</Authors>
+    <Authors>DomDuva</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
-    <RepositoryUrl>https://github.com/your-org/vitreous</RepositoryUrl>
-    <PackageVersion>0.1.0</PackageVersion>
+    <RepositoryUrl>https://github.com/DomDuva/Vitreous</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryBranch>main</RepositoryBranch>
+    <PackageProjectUrl>https://github.com/DomDuva/Vitreous</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
     <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <!-- Allow ASP.NET Core framework references when web workload prune data is missing -->
     <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
   </PropertyGroup>
+
+  <!-- MinVer: derive PackageVersion from git tags automatically -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
 </Project>

@@ -18,11 +18,16 @@ namespace Vitreous.SourceGeneration;
 [Generator]
 public sealed class VitreousGenerator : IIncrementalGenerator
 {
-    // Well-known interface names (unqualified generic arities)
+    // Well-known handler interface names (unqualified generic arities)
     private const string CommandHandlerWithResult = "Vitreous.Abstractions.ICommandHandler`2";
     private const string CommandHandlerVoid       = "Vitreous.Abstractions.ICommandHandler`1";
     private const string QueryHandler             = "Vitreous.Abstractions.IQueryHandler`2";
     private const string NotificationHandler      = "Vitreous.Abstractions.INotificationHandler`1";
+
+    // Well-known message interface names (used for VIT001 — no handler found)
+    private const string ICommandWithResult = "Vitreous.Abstractions.ICommand`1";
+    private const string ICommandVoid       = "Vitreous.Abstractions.ICommand";
+    private const string IQueryInterface    = "Vitreous.Abstractions.IQuery`1";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -45,7 +50,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         ImmutableArray<ClassDeclarationSyntax> classes,
         SourceProductionContext context)
     {
-        // Resolve the four handler interface symbols
+        // Resolve handler interface symbols
         var iCommandHandlerWithResult = compilation.GetTypeByMetadataName(CommandHandlerWithResult);
         var iCommandHandlerVoid       = compilation.GetTypeByMetadataName(CommandHandlerVoid);
         var iQueryHandler             = compilation.GetTypeByMetadataName(QueryHandler);
@@ -58,9 +63,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             return;
         }
 
-        var discovered = new List<HandlerInfo>();
+        // Resolve message interface symbols (for VIT001)
+        var iCommand      = compilation.GetTypeByMetadataName(ICommandWithResult);
+        var iCommandVoidIf = compilation.GetTypeByMetadataName(ICommandVoid);
+        var iQuery        = compilation.GetTypeByMetadataName(IQueryInterface);
 
-        // Track message types that have handlers to detect missing / duplicate registrations
+        var discovered    = new List<HandlerInfo>();
+        var messageTypes  = new List<MessageTypeInfo>();
+
+        // Track message types that have handlers (to detect missing / duplicate registrations)
         // key = messageFullName, value = list of handler full names
         var commandHandlers = new Dictionary<string, List<string>>();
         var queryHandlers   = new Dictionary<string, List<string>>();
@@ -82,25 +93,40 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 discovered,
                 commandHandlers,
                 queryHandlers);
+
+            TryCollectMessageType(
+                symbol,
+                iCommand,
+                iCommandVoidIf,
+                iQuery,
+                messageTypes,
+                classDecl.GetLocation());
         }
 
         // ── Pass 2: referenced assemblies that reference Vitreous ─────────────
-        // Discovers handlers in other projects (e.g. Application / Infrastructure
-        // layers in a DDD solution) without requiring the source generator to be
-        // installed on those projects.
+        // Discovers handlers and message types in other projects (e.g. Application /
+        // Infrastructure layers in a DDD solution) without requiring the source generator
+        // to be installed on those projects.
         CollectFromReferencedAssemblies(
             compilation,
             iCommandHandlerWithResult,
             iCommandHandlerVoid,
             iQueryHandler,
             iNotificationHandler,
+            iCommand,
+            iCommandVoidIf,
+            iQuery,
             discovered,
             commandHandlers,
-            queryHandlers);
+            queryHandlers,
+            messageTypes);
 
-        // Report diagnostics for ambiguous dispatch (multiple handlers per message)
-        ReportDuplicateDiagnostics(context, commandHandlers, classes, compilation);
-        ReportDuplicateDiagnostics(context, queryHandlers, classes, compilation);
+        // Report VIT002 — ambiguous dispatch (multiple handlers per message)
+        ReportDuplicateDiagnostics(context, commandHandlers);
+        ReportDuplicateDiagnostics(context, queryHandlers);
+
+        // Report VIT001 — no handler found for a command/query type
+        ReportNoHandlerDiagnostics(context, messageTypes, commandHandlers, queryHandlers);
 
         // Emit source files
         var source1 = RegistrationEmitter.EmitServiceCollectionExtensions(discovered);
@@ -215,12 +241,78 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     }
 
     // -------------------------------------------------------------------------
+    // Message type collection — used for VIT001 (no handler found)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Inspects <paramref name="symbol"/>'s implemented interfaces and records it
+    /// as a message type if it implements <c>ICommand&lt;T&gt;</c>, <c>ICommand</c>,
+    /// or <c>IQuery&lt;T&gt;</c>. Notifications are excluded — zero handlers is valid
+    /// for notifications.
+    /// </summary>
+    private static void TryCollectMessageType(
+        INamedTypeSymbol symbol,
+        INamedTypeSymbol? iCommand,
+        INamedTypeSymbol? iCommandVoid,
+        INamedTypeSymbol? iQuery,
+        List<MessageTypeInfo> messageTypes,
+        Location location)
+    {
+        foreach (var iface in symbol.AllInterfaces)
+        {
+            var original = iface.OriginalDefinition;
+
+            // ICommand<TResult> — check before bare ICommand so the more specific match wins
+            if (iCommand is not null &&
+                SymbolEqualityComparer.Default.Equals(original, iCommand))
+            {
+                var resultType = iface.TypeArguments[0];
+                messageTypes.Add(new MessageTypeInfo(
+                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    MessageTypeName: symbol.Name,
+                    Kind:            HandlerKind.Command,
+                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    Location:        location));
+                return;
+            }
+
+            // IQuery<TResult>
+            if (iQuery is not null &&
+                SymbolEqualityComparer.Default.Equals(original, iQuery))
+            {
+                var resultType = iface.TypeArguments[0];
+                messageTypes.Add(new MessageTypeInfo(
+                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    MessageTypeName: symbol.Name,
+                    Kind:            HandlerKind.Query,
+                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    Location:        location));
+                return;
+            }
+
+            // ICommand (void) — non-generic, no type arguments
+            if (iCommandVoid is not null &&
+                SymbolEqualityComparer.Default.Equals(original, iCommandVoid) &&
+                iface.TypeArguments.Length == 0)
+            {
+                messageTypes.Add(new MessageTypeInfo(
+                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    MessageTypeName: symbol.Name,
+                    Kind:            HandlerKind.VoidCommand,
+                    ResultFullName:  null,
+                    Location:        location));
+                return;
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Referenced-assembly scanning (multi-project / DDD support)
     // -------------------------------------------------------------------------
 
     /// <summary>
     /// Scans all referenced assemblies that directly reference the Vitreous core package
-    /// and collects any handler implementations found in them.
+    /// and collects any handler implementations and message types found in them.
     /// </summary>
     private static void CollectFromReferencedAssemblies(
         Compilation compilation,
@@ -228,9 +320,13 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommandHandlerVoid,
         INamedTypeSymbol? iQueryHandler,
         INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iCommand,
+        INamedTypeSymbol? iCommandVoidIf,
+        INamedTypeSymbol? iQuery,
         List<HandlerInfo> discovered,
         Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers)
+        Dictionary<string, List<string>> queryHandlers,
+        List<MessageTypeInfo> messageTypes)
     {
         foreach (var reference in compilation.References)
         {
@@ -249,9 +345,13 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 iCommandHandlerVoid,
                 iQueryHandler,
                 iNotificationHandler,
+                iCommand,
+                iCommandVoidIf,
+                iQuery,
                 discovered,
                 commandHandlers,
-                queryHandlers);
+                queryHandlers,
+                messageTypes);
         }
     }
 
@@ -267,7 +367,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     /// <summary>
     /// Recursively traverses <paramref name="ns"/> and calls
-    /// <see cref="TryCollectHandler"/> for every non-abstract class found.
+    /// <see cref="TryCollectHandler"/> and <see cref="TryCollectMessageType"/>
+    /// for every non-abstract class found.
     /// </summary>
     private static void CollectFromNamespace(
         INamespaceSymbol ns,
@@ -275,9 +376,13 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommandHandlerVoid,
         INamedTypeSymbol? iQueryHandler,
         INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iCommand,
+        INamedTypeSymbol? iCommandVoidIf,
+        INamedTypeSymbol? iQuery,
         List<HandlerInfo> discovered,
         Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers)
+        Dictionary<string, List<string>> queryHandlers,
+        List<MessageTypeInfo> messageTypes)
     {
         foreach (var member in ns.GetMembers())
         {
@@ -290,9 +395,13 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                         iCommandHandlerVoid,
                         iQueryHandler,
                         iNotificationHandler,
+                        iCommand,
+                        iCommandVoidIf,
+                        iQuery,
                         discovered,
                         commandHandlers,
-                        queryHandlers);
+                        queryHandlers,
+                        messageTypes);
                     break;
 
                 case INamedTypeSymbol type
@@ -306,30 +415,29 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                         discovered,
                         commandHandlers,
                         queryHandlers);
+                    // Referenced assemblies have no syntax trees — use Location.None
+                    TryCollectMessageType(
+                        type,
+                        iCommand,
+                        iCommandVoidIf,
+                        iQuery,
+                        messageTypes,
+                        Location.None);
                     break;
             }
         }
     }
 
     // -------------------------------------------------------------------------
-    // Helpers
+    // Diagnostics
     // -------------------------------------------------------------------------
 
-    private static void AddToMultimap(
-        Dictionary<string, List<string>> map,
-        string key,
-        string value)
-    {
-        if (!map.TryGetValue(key, out var list))
-            map[key] = list = new List<string>();
-        list.Add(value);
-    }
-
+    /// <summary>
+    /// Emits VIT002 for every message type that has more than one handler registered.
+    /// </summary>
     private static void ReportDuplicateDiagnostics(
         SourceProductionContext context,
-        Dictionary<string, List<string>> handlerMap,
-        ImmutableArray<ClassDeclarationSyntax> classes,
-        Compilation compilation)
+        Dictionary<string, List<string>> handlerMap)
     {
         foreach (var pair in handlerMap)
         {
@@ -346,5 +454,47 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 messageType,
                 handlersStr));
         }
+    }
+
+    /// <summary>
+    /// Emits VIT001 for every discovered command or query that has no corresponding handler.
+    /// Notifications are excluded — zero notification handlers is a valid configuration.
+    /// </summary>
+    private static void ReportNoHandlerDiagnostics(
+        SourceProductionContext context,
+        List<MessageTypeInfo> messageTypes,
+        Dictionary<string, List<string>> commandHandlers,
+        Dictionary<string, List<string>> queryHandlers)
+    {
+        foreach (var msg in messageTypes)
+        {
+            var map = msg.Kind == HandlerKind.Query ? queryHandlers : commandHandlers;
+            if (map.ContainsKey(msg.MessageFullName))
+                continue;
+
+            var handlerKindWord = msg.Kind == HandlerKind.Query ? "Query" : "Command";
+            var resultSuffix    = msg.ResultFullName is not null ? $", {msg.ResultFullName}" : "";
+
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.NoHandlerFound,
+                msg.Location,
+                msg.MessageTypeName,
+                handlerKindWord,
+                resultSuffix));
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // Helpers
+    // -------------------------------------------------------------------------
+
+    private static void AddToMultimap(
+        Dictionary<string, List<string>> map,
+        string key,
+        string value)
+    {
+        if (!map.TryGetValue(key, out var list))
+            map[key] = list = new List<string>();
+        list.Add(value);
     }
 }

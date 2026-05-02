@@ -12,7 +12,7 @@ internal static class DiagnosticDescriptors
     /// <summary>
     /// VIT001 — A command or query type has no registered handler.
     /// </summary>
-    public static readonly DiagnosticDescriptor NoHandlerFound = new(
+    internal static readonly DiagnosticDescriptor NoHandlerFound = new(
         id: "VIT001",
         title: "No Vitreous handler found",
         messageFormat: "No handler is registered for '{0}'. Implement 'I{1}Handler<{0}{2}>' in any project that references Vitreous.",
@@ -24,7 +24,7 @@ internal static class DiagnosticDescriptors
     /// <summary>
     /// VIT002 — A command or query type has more than one handler (ambiguous dispatch).
     /// </summary>
-    public static readonly DiagnosticDescriptor MultipleHandlersFound = new(
+    internal static readonly DiagnosticDescriptor MultipleHandlersFound = new(
         id: "VIT002",
         title: "Multiple Vitreous handlers found",
         messageFormat: "Multiple handlers found for '{0}': {1}. Dispatch is ambiguous — remove all but one handler.",

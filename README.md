@@ -1,6 +1,6 @@
 # Vitreous
 
-A high-performance, source-generated mediator for .NET 10 — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI.
+A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, .NET 9, and .NET 10.
 
 **Packages**
 
@@ -38,7 +38,10 @@ A high-performance, source-generated mediator for .NET 10 — a modern alternati
 ### Installation
 
 ```xml
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
 <PackageReference Include="Vitreous" Version="0.1.0" />
+
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
 <PackageReference Include="Vitreous.SourceGeneration" Version="0.1.0" PrivateAssets="all" />
 ```
 
@@ -310,9 +313,11 @@ MyApp.Api              ← install Vitreous.SourceGeneration here only
 
 ```xml
 <!-- MyApp.Application and MyApp.Infrastructure — no source generator needed -->
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
 <PackageReference Include="Vitreous" Version="0.1.0" />
 
 <!-- MyApp.Api only -->
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
 <PackageReference Include="Vitreous" Version="0.1.0" />
 <PackageReference Include="Vitreous.SourceGeneration" Version="0.1.0" PrivateAssets="all" />
 ```
@@ -383,6 +388,7 @@ builder.Services.AddVitreousHandlers(
 ### Installation
 
 ```xml
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.DevUI -->
 <PackageReference Include="Vitreous.DevUI" Version="0.1.0" />
 ```
 
@@ -442,6 +448,7 @@ Vitreous provides two caching packages. Use `Vitreous.Caching` for any `IDistrib
 ### IDistributedCache backend
 
 ```xml
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.Caching -->
 <PackageReference Include="Vitreous.Caching" Version="0.1.0" />
 ```
 
@@ -523,6 +530,7 @@ Tracing and logging always execute, even on cache hits.
 ### Redis backend
 
 ```xml
+<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.Caching.Redis -->
 <PackageReference Include="Vitreous.Caching.Redis" Version="0.1.0" />
 ```
 

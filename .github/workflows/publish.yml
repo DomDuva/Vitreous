@@ -1,0 +1,63 @@
+name: Publish to NuGet
+
+# Triggers only when a version tag (e.g. v0.1.0) is pushed.
+# Also supports manual re-runs from the GitHub Actions UI without re-tagging.
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'   # pre-release tags: v0.2.0-beta.1
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Git tag to publish (e.g. v0.1.0). The tag must already exist.'
+        required: true
+
+jobs:
+  publish:
+    name: Build, Test & Publish
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout (full history for MinVer)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # MinVer needs the full git history to compute versions from tags
+          ref: ${{ inputs.tag || github.ref }}   # for workflow_dispatch: check out the specified tag
+
+      - name: Setup .NET 10
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.x'
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity minimal
+
+      - name: Pack
+        run: dotnet pack --configuration Release --no-build --output ./artifacts
+
+      - name: Push packages to NuGet.org
+        run: |
+          dotnet nuget push ./artifacts/*.nupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+          dotnet nuget push ./artifacts/*.snupkg \
+            --api-key ${{ secrets.NUGET_API_KEY }} \
+            --source https://api.nuget.org/v3/index.json \
+            --skip-duplicate
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nuget-packages
+          path: ./artifacts/
+          retention-days: 7

@@ -4,8 +4,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <!-- ASP.NET Core -->
-    <PackageVersion Include="Microsoft.AspNetCore.App.Ref" Version="10.0.0" />
+    <!-- Versioning -->
+    <PackageVersion Include="MinVer" Version="6.0.0" />
 
     <!-- DI -->
     <PackageVersion Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />

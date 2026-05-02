@@ -1,8 +1,3 @@
 ## Unshipped
 
-### New Rules
-
-Rule ID | Category | Severity | Notes
---------|----------|----------|-------
-VIT001  | Vitreous | Warning  | No handler found for message type
-VIT002  | Vitreous | Error    | Multiple handlers found for message type (ambiguous dispatch)
+; No unshipped rules.

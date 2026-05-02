@@ -6,6 +6,7 @@
     <AssemblyName>Vitreous.Sample.DDD.Infrastructure</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
   </PropertyGroup>
 
   <ItemGroup>

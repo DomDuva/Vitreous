@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Vitreous.SourceGenerationTests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.CodeAnalysis.CSharp" />
+    <PackageReference Include="coverlet.collector" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!--
+      Reference Vitreous so that typeof(Vitreous.Abstractions.ICommand<>) is available at runtime,
+      letting us pass the assembly as a metadata reference to in-memory test compilations.
+    -->
+    <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
+    <!--
+      Reference the generator as a plain assembly (NOT as an Analyzer) so we can instantiate
+      VitreousGenerator directly in tests. The generator does NOT run on this test project.
+    -->
+    <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -17,6 +17,7 @@
   <Folder Name="/tests/">
     <Project Path="tests/Vitreous.CachingTests/Vitreous.CachingTests.csproj" />
     <Project Path="tests/Vitreous.IntegrationTests/Vitreous.IntegrationTests.csproj" />
+    <Project Path="tests/Vitreous.SourceGenerationTests/Vitreous.SourceGenerationTests.csproj" />
     <Project Path="tests/Vitreous.UnitTests/Vitreous.UnitTests.csproj" />
   </Folder>
 </Solution>

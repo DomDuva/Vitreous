@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using Vitreous.Abstractions;
 
 namespace Vitreous.Internal;
@@ -6,6 +7,12 @@ namespace Vitreous.Internal;
 /// Builds and executes a pipeline of <see cref="IPipelineBehavior{TMessage,TResult}"/> instances
 /// around a terminal handler delegate.
 /// </summary>
+/// <remarks>
+/// This type is <see langword="public"/> solely because the source-generated
+/// <c>VitreousDispatcher</c> calls it directly. It is not intended for direct
+/// use by application code.
+/// </remarks>
+[EditorBrowsable(EditorBrowsableState.Never)]
 public static class PipelineExecutor
 {
     /// <summary>
