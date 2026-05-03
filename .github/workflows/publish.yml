@@ -43,18 +43,26 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
-      # Pass the version explicitly so MinVer does not need to detect it from git tags.
+      # MinVerSkip=true disables MinVer's MSBuild target so it cannot override
+      # the version we derive from the git tag name.
       - name: Build (Release)
-        run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.version.outputs.value }}
+        run: |
+          dotnet build --configuration Release --no-restore \
+            -p:MinVerSkip=true \
+            -p:Version=${{ steps.version.outputs.value }}
 
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity minimal
 
       # Only pack projects under src/ — samples and tests are excluded.
+      # MinVerSkip=true is required here too: dotnet pack re-runs MSBuild targets
+      # even with --no-build, and MinVer would otherwise override PackageVersion.
       - name: Pack
         run: |
           for proj in src/*/*.csproj; do
             dotnet pack "$proj" --configuration Release --no-build \
+              -p:MinVerSkip=true \
+              -p:Version=${{ steps.version.outputs.value }} \
               -p:PackageVersion=${{ steps.version.outputs.value }} \
               --output ./artifacts
           done
