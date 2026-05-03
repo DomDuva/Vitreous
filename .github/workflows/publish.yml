@@ -21,24 +21,19 @@ jobs:
       contents: read
 
     steps:
-      # Checkout without specifying ref so that fetch-depth: 0 reliably fetches
-      # all history and tags. For push triggers GitHub auto-checks out the tagged
-      # commit via GITHUB_SHA. For workflow_dispatch we switch below.
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
 
-      # fetch-tags + ref in actions/checkout is broken — tags are silently skipped.
-      # This explicit fetch is the only reliable way to get tags onto the runner.
-      - name: Fetch all tags
-        run: git fetch --tags --force
-
-      # For workflow_dispatch the default checkout lands on the default branch.
-      # Switch to the requested tag so MinVer sees it as the current commit.
-      - name: Switch to requested tag
-        if: github.event_name == 'workflow_dispatch'
-        run: git checkout ${{ inputs.tag }}
+      # Strip the leading 'v' from the tag (v0.1.0-beta.1 → 0.1.0-beta.1).
+      # For push triggers: github.ref_name is the tag (e.g. v0.1.0-beta.1).
+      # For workflow_dispatch: inputs.tag is used instead.
+      - name: Resolve version
+        id: version
+        run: |
+          RAW=${{ inputs.tag || github.ref_name }}
+          echo "value=${RAW#v}" >> $GITHUB_OUTPUT
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
@@ -48,8 +43,9 @@ jobs:
       - name: Restore dependencies
         run: dotnet restore
 
+      # Pass the version explicitly so MinVer does not need to detect it from git tags.
       - name: Build (Release)
-        run: dotnet build --configuration Release --no-restore
+        run: dotnet build --configuration Release --no-restore -p:Version=${{ steps.version.outputs.value }}
 
       - name: Test
         run: dotnet test --configuration Release --no-build --verbosity minimal
@@ -58,7 +54,9 @@ jobs:
       - name: Pack
         run: |
           for proj in src/*/*.csproj; do
-            dotnet pack "$proj" --configuration Release --no-build --output ./artifacts
+            dotnet pack "$proj" --configuration Release --no-build \
+              -p:PackageVersion=${{ steps.version.outputs.value }} \
+              --output ./artifacts
           done
 
       - name: Push packages to NuGet.org
