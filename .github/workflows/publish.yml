@@ -21,12 +21,24 @@ jobs:
       contents: read
 
     steps:
-      - name: Checkout (full history for MinVer)
+      # Checkout without specifying ref so that fetch-depth: 0 reliably fetches
+      # all history and tags. For push triggers GitHub auto-checks out the tagged
+      # commit via GITHUB_SHA. For workflow_dispatch we switch below.
+      - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0    # MinVer needs the full git history to compute versions from tags
-          fetch-tags: true  # explicitly fetch all tags so MinVer can resolve the version
-          ref: ${{ inputs.tag || github.ref }}
+          fetch-depth: 0
+
+      # fetch-tags + ref in actions/checkout is broken — tags are silently skipped.
+      # This explicit fetch is the only reliable way to get tags onto the runner.
+      - name: Fetch all tags
+        run: git fetch --tags --force
+
+      # For workflow_dispatch the default checkout lands on the default branch.
+      # Switch to the requested tag so MinVer sees it as the current commit.
+      - name: Switch to requested tag
+        if: github.event_name == 'workflow_dispatch'
+        run: git checkout ${{ inputs.tag }}
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
