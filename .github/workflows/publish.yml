@@ -24,13 +24,9 @@ jobs:
       - name: Checkout (full history for MinVer)
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # MinVer needs the full git history to compute versions from tags
+          fetch-depth: 0    # MinVer needs the full git history to compute versions from tags
+          fetch-tags: true  # explicitly fetch all tags so MinVer can resolve the version
           ref: ${{ inputs.tag || github.ref }}
-
-      # actions/checkout does not fetch tags when a specific ref is given.
-      # MinVer requires tags to be present to compute the version correctly.
-      - name: Fetch all tags
-        run: git fetch --tags --force
 
       - name: Setup .NET 10
         uses: actions/setup-dotnet@v4
