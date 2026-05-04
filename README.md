@@ -1,5 +1,8 @@
 # Vitreous
 
+[![NuGet Version](https://img.shields.io/nuget/v/Vitreous.svg)](https://www.nuget.org/packages/Vitreous)
+[![NuGet Downloads](https://img.shields.io/nuget/dt/Vitreous.svg)](https://www.nuget.org/packages/Vitreous)
+
 A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, .NET 9, and .NET 10.
 
 **Packages**
