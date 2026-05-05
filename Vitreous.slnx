@@ -1,4 +1,9 @@
 <Solution>
+  <Folder Name="/benchmark/">
+    <Project Path="benchmark/BuildTime.MediatR/BuildTime.MediatR.csproj" />
+    <Project Path="benchmark/BuildTime.Vitreous/BuildTime.Vitreous.csproj" />
+    <Project Path="benchmark/Vitreous.Benchmarks/Vitreous.Benchmarks.csproj" />
+  </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Vitreous.Sample/Vitreous.Sample.csproj" />
     <Project Path="samples/Vitreous.Sample.Caching/Vitreous.Sample.Caching.csproj" />

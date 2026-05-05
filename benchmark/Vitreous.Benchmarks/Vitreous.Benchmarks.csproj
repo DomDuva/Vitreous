@@ -1,0 +1,41 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!--
+      Target net9.0 for stable BenchmarkDotNet support.
+      BenchmarkDotNet 0.14.x requires a recognized LTS or STS runtime.
+    -->
+    <TargetFramework>net9.0</TargetFramework>
+    <RootNamespace>Vitreous.Benchmarks</RootNamespace>
+    <AssemblyName>Vitreous.Benchmarks</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Benchmarks are not production code; skip style enforcement -->
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <!-- BenchmarkDotNet needs Release builds to be meaningful -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="BenchmarkDotNet" />
+    <PackageReference Include="MediatR" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Core Vitreous library -->
+    <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
+    <!--
+      Source generator: runs at compile time, discovers all ICommandHandler /
+      IQueryHandler / INotificationHandler types in this project and emits
+      VitreousDispatcher.g.cs + VitreousServiceCollectionExtensions.g.cs.
+      ReferenceOutputAssembly=false means it is not a runtime dependency.
+    -->
+    <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+</Project>

@@ -20,20 +20,47 @@ public sealed class SequentialPublisher : IPublisher
 
     public SequentialPublisher(IServiceProvider services) => _services = services;
 
-    public async ValueTask Publish<TNotification>(
+    public ValueTask Publish<TNotification>(
         TNotification notification,
         CancellationToken ct = default)
         where TNotification : INotification
     {
-        var handlers = _services
-            .GetServices<INotificationHandler<TNotification>>()
-            .ToArray();
+        // GetServices returns a T[] from MSDI — avoid .ToArray() which would allocate
+        // a second copy. Cast to ICollection<T> for an allocation-free Count check.
+        var handlers = _services.GetServices<INotificationHandler<TNotification>>();
+        var behaviors = _services.GetServices<INotificationPipelineBehavior<TNotification>>();
 
-        var behaviors = _services
-            .GetServices<INotificationPipelineBehavior<TNotification>>()
-            .ToArray();
+        // Fast path: no handlers registered — nothing to do.
+        if (handlers is ICollection<INotificationHandler<TNotification>> { Count: 0 })
+            return ValueTask.CompletedTask;
 
-        // Terminal: run handlers sequentially, stop on first exception
+        // Fast path: no behaviors — invoke handlers sequentially without building a
+        // delegate chain or allocating a terminal lambda.
+        if (behaviors is ICollection<INotificationPipelineBehavior<TNotification>> { Count: 0 })
+            return RunHandlersSequentiallyAsync(handlers, notification, ct);
+
+        // Slow path: behaviors present — build the full pipeline.
+        return PublishWithBehaviorsAsync(notification, handlers, behaviors, ct);
+    }
+
+    private static async ValueTask RunHandlersSequentiallyAsync<TNotification>(
+        IEnumerable<INotificationHandler<TNotification>> handlers,
+        TNotification notification,
+        CancellationToken ct)
+        where TNotification : INotification
+    {
+        foreach (var handler in handlers)
+            await handler.Handle(notification, ct);
+    }
+
+    private static async ValueTask PublishWithBehaviorsAsync<TNotification>(
+        TNotification notification,
+        IEnumerable<INotificationHandler<TNotification>> handlers,
+        IEnumerable<INotificationPipelineBehavior<TNotification>> behaviors,
+        CancellationToken ct)
+        where TNotification : INotification
+    {
+        // Terminal: run handlers sequentially, stop on first exception.
         NotificationHandlerDelegate<TNotification> terminal = async (n, token) =>
         {
             foreach (var handler in handlers)

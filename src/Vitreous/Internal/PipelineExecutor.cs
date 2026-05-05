@@ -25,6 +25,11 @@ public static class PipelineExecutor
         IEnumerable<IPipelineBehavior<TMessage, TResult>> behaviors,
         CancellationToken ct)
     {
+        // Fast path: no behaviors — skip Reverse() allocation entirely.
+        // GetServices returns T[] from MSDI; Array.Empty<T>() is also ICollection<T>.
+        if (behaviors is ICollection<IPipelineBehavior<TMessage, TResult>> { Count: 0 })
+            return terminal(message, ct);
+
         // Build the pipeline chain right-to-left so the first behavior is outermost.
         MessageHandlerDelegate<TMessage, TResult> pipeline = terminal;
 
@@ -41,14 +46,30 @@ public static class PipelineExecutor
     /// <summary>
     /// Executes the pipeline for a void command.
     /// <para>
-    /// Void-command behaviors are registered as <see cref="IPipelineBehavior{TCommand, Unit}"/>.
-    /// The handler's <see cref="Result"/> is adapted to <see cref="Result{T}">Result&lt;Unit&gt;</see>
-    /// before entering the behavior chain and converted back to <see cref="Result"/> on the way out,
-    /// so behaviors see a uniform <c>Result&lt;TResult&gt;</c> regardless of whether the command
-    /// returns a value.
+    /// When behaviors are present, the handler's <see cref="Result"/> is adapted to
+    /// <see cref="Result{T}">Result&lt;Unit&gt;</see> before entering the behavior chain
+    /// and converted back on the way out, so behaviors see a uniform
+    /// <c>Result&lt;TResult&gt;</c> regardless of whether the command returns a value.
+    /// When no behaviors are registered the terminal is called directly with no
+    /// conversion overhead.
     /// </para>
     /// </summary>
-    public static async ValueTask<Result> ExecuteVoid<TCommand>(
+    public static ValueTask<Result> ExecuteVoid<TCommand>(
+        TCommand command,
+        CommandHandlerDelegate<TCommand> terminal,
+        IEnumerable<IPipelineBehavior<TCommand, Unit>> behaviors,
+        CancellationToken ct)
+        where TCommand : ICommand
+    {
+        // Fast path: no behaviors — call terminal directly, no Unit round-trip, no async
+        // state machines.
+        if (behaviors is ICollection<IPipelineBehavior<TCommand, Unit>> { Count: 0 })
+            return terminal(command, ct);
+
+        return ExecuteVoidCore(command, terminal, behaviors, ct);
+    }
+
+    private static async ValueTask<Result> ExecuteVoidCore<TCommand>(
         TCommand command,
         CommandHandlerDelegate<TCommand> terminal,
         IEnumerable<IPipelineBehavior<TCommand, Unit>> behaviors,
@@ -89,6 +110,10 @@ public static class PipelineExecutor
         CancellationToken ct)
         where TNotification : INotification
     {
+        // Fast path: no behaviors — skip Reverse() allocation entirely.
+        if (behaviors is ICollection<INotificationPipelineBehavior<TNotification>> { Count: 0 })
+            return terminal(notification, ct);
+
         NotificationHandlerDelegate<TNotification> pipeline = terminal;
 
         foreach (var behavior in behaviors.Reverse())
