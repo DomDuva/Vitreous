@@ -28,16 +28,23 @@ public sealed class SequentialPublisher : IPublisher
         // GetServices returns a T[] from MSDI — avoid .ToArray() which would allocate
         // a second copy. Cast to ICollection<T> for an allocation-free Count check.
         var handlers = _services.GetServices<INotificationHandler<TNotification>>();
-        var behaviors = _services.GetServices<INotificationPipelineBehavior<TNotification>>();
 
-        // Fast path: no handlers registered — nothing to do.
+        // Fast path: no handlers registered — don't even resolve behaviors.
         if (handlers is ICollection<INotificationHandler<TNotification>> { Count: 0 })
             return ValueTask.CompletedTask;
 
-        // Fast path: no behaviors — invoke handlers sequentially without building a
-        // delegate chain or allocating a terminal lambda.
+        var behaviors = _services.GetServices<INotificationPipelineBehavior<TNotification>>();
+
+        // Fast path: no behaviors — invoke handlers without building a delegate chain.
         if (behaviors is ICollection<INotificationPipelineBehavior<TNotification>> { Count: 0 })
+        {
+            // Most common case: single handler — return its ValueTask directly,
+            // no async state machine needed.
+            if (handlers is IReadOnlyList<INotificationHandler<TNotification>> { Count: 1 } list)
+                return list[0].Handle(notification, ct);
+
             return RunHandlersSequentiallyAsync(handlers, notification, ct);
+        }
 
         // Slow path: behaviors present — build the full pipeline.
         return PublishWithBehaviorsAsync(notification, handlers, behaviors, ct);
