@@ -17,6 +17,32 @@ A high-performance, source-generated mediator for .NET — a modern alternative 
 
 ---
 
+## Performance
+
+Benchmarks run on .NET 9.0.14, AMD Ryzen 7 7800X3D. Source: [`benchmark/Vitreous.Benchmarks`](benchmark/Vitreous.Benchmarks).
+
+MediatR is benchmarked at its default Transient handler lifetime. Switching to Singleton makes no meaningful difference to dispatch latency or allocation.
+
+### Dispatch (hot path)
+
+| Scenario | MediatR | Vitreous |
+|---|---|---|
+| Send query | 64.9 ns / 264 B | 57.9 ns / 64 B |
+| Send void command | 65.0 ns / 192 B | 59.0 ns / 64 B |
+| Publish notification | 88.8 ns / 288 B | 63.6 ns / **0 B** |
+| Send query (+ 1 behavior) | 106.5 ns / 448 B | 106.1 ns / 240 B |
+
+### Startup (`BuildServiceProvider`)
+
+| | MediatR | Vitreous |
+|---|---|---|
+| Time | 37,404 ns | 1,191 ns |
+| Allocated | 106,049 B | 7,536 B |
+
+Vitreous is **~31× faster** to start and allocates **~14× less** — because `AddVitreousHandlers()` emits direct `TryAddSingleton` calls at build time with no assembly scanning or reflection.
+
+---
+
 ## Table of contents
 
 1. [Core package](#1-core-package)
@@ -40,12 +66,9 @@ A high-performance, source-generated mediator for .NET — a modern alternative 
 
 ### Installation
 
-```xml
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
-<PackageReference Include="Vitreous" Version="0.1.0" />
-
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
-<PackageReference Include="Vitreous.SourceGeneration" Version="0.1.0" PrivateAssets="all" />
+```
+dotnet add package Vitreous
+dotnet add package Vitreous.SourceGeneration
 ```
 
 Register with the DI container:
@@ -217,9 +240,7 @@ public sealed class LoggingBehavior<TMessage, TResult>(ILogger<LoggingBehavior<T
 
 #### Void commands and `Unit`
 
-Void commands (`ICommand`) participate in the **same** `IPipelineBehavior<TMessage, TResult>` pipeline. When a void command is dispatched, `TResult` is resolved as `Unit` — a built-in struct that represents the absence of a meaningful value. The `PipelineExecutor` adapts the handler's `Result` to `Result<Unit>` before the behavior chain runs and converts it back on the way out, so behaviors see a uniform `Result<TResult>` in both cases.
-
-This means a single open-generic registration covers everything:
+Void commands (`ICommand`) participate in the same `IPipelineBehavior<TMessage, TResult>` pipeline. When behaviors are present, `TResult` is resolved as `Unit` and the handler's `Result` is adapted before the chain runs and converted back on the way out. When no behaviors are registered the handler is called directly with no `Unit` conversion or async state machine overhead.
 
 | Message kind | `TMessage` | `TResult` | Covered by `IPipelineBehavior<,>`? |
 |---|---|---|---|
@@ -231,7 +252,6 @@ This means a single open-generic registration covers everything:
 Notifications dispatch to multiple handlers with a fan-out model and no `Result` wrapper, so they remain on their own interface.
 
 ```csharp
-// Notification behaviors — registered separately
 builder.Services.AddSingleton(
     typeof(INotificationPipelineBehavior<>), typeof(NotificationLoggingBehavior<>));
 ```
@@ -242,16 +262,10 @@ builder.Services.AddSingleton(
 
 Every handler returns `Result` or `Result<T>`. Results are either a success value or an `Error` — never both.
 
-The special type `Unit` represents the absence of a value and is used as `TResult` in behaviors when a void command is dispatched. You do not use `Unit` directly in handlers — handlers still return `Result` — but you may encounter it in generic behavior constraints.
-
 ```csharp
-// Create
-Result<Guid>  ok  = Result<Guid>.Ok(Guid.NewGuid());
-Result<Guid>  err = Result<Guid>.Fail(Error.NotFound("Order not found."));
-
 // Implicit conversions (the most common path)
-Result<Guid> ok2  = Guid.NewGuid();                     // T → Result<T>
-Result<Guid> err2 = Error.NotFound("Order not found."); // Error → Result<T>
+Result<Guid> ok  = Guid.NewGuid();                     // T → Result<T>
+Result<Guid> err = Error.NotFound("Order not found."); // Error → Result<T>
 
 // Branch on outcome
 string message = result.Match(
@@ -271,6 +285,8 @@ string message = await result.MatchAsync(
     async err => err.Message
 );
 ```
+
+`Unit` is a built-in struct that represents the absence of a value. It is used as `TResult` in behaviors when a void command is dispatched — you will not use it in handlers directly, but may encounter it in generic behavior constraints.
 
 ---
 
@@ -306,7 +322,7 @@ No attributes, no startup overhead. The generator runs during `dotnet build` and
 
 #### Multi-project solutions (DDD, Clean Architecture)
 
-The generator automatically scans both the current project's source files **and** every referenced assembly that directly references `Vitreous`. This means handlers can live in separate projects with no extra configuration.
+The generator automatically scans both the current project's source files **and** every referenced assembly that directly references `Vitreous`. Handlers can live in separate projects with no extra configuration.
 
 ```
 MyApp.Api              ← install Vitreous.SourceGeneration here only
@@ -314,15 +330,17 @@ MyApp.Api              ← install Vitreous.SourceGeneration here only
   └── ref MyApp.Infrastructure (repository handlers, integrations)
 ```
 
-```xml
-<!-- MyApp.Application and MyApp.Infrastructure — no source generator needed -->
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
-<PackageReference Include="Vitreous" Version="0.1.0" />
+Application and infrastructure projects — core package only:
 
-<!-- MyApp.Api only -->
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous -->
-<PackageReference Include="Vitreous" Version="0.1.0" />
-<PackageReference Include="Vitreous.SourceGeneration" Version="0.1.0" PrivateAssets="all" />
+```
+dotnet add package Vitreous
+```
+
+Entry-point project only:
+
+```
+dotnet add package Vitreous
+dotnet add package Vitreous.SourceGeneration
 ```
 
 ```csharp
@@ -342,36 +360,16 @@ Vitreous provides two ways to register handlers. They are **mutually exclusive**
 
 Zero runtime reflection. The generator emits a concrete dispatcher at build time. Requires `Vitreous.SourceGeneration` on the entry-point project.
 
-```csharp
-builder.Services.AddVitreousHandlers();
-
-// With options
-builder.Services.AddVitreousHandlers(options =>
-{
-    options.DefaultHandlerLifetime = ServiceLifetime.Singleton; // default
-});
-```
-
 #### `AddVitreousHandlers(params Assembly[])` — reflection-based
 
-Scans the supplied assemblies at application startup. No source generator needed. Uses `ReflectionSender` at runtime. Useful for plugin architectures or when compile-time generation is not available.
+Scans the supplied assemblies at application startup. No source generator needed. Useful for plugin architectures or when compile-time generation is not available.
 
 ```csharp
-// Specify every assembly that contains handlers
 builder.Services.AddVitreousHandlers(
-    typeof(CreateOrderHandler).Assembly,   // MyApp.Application
-    typeof(SqlOrderRepository).Assembly    // MyApp.Infrastructure
-);
-
-// With options
-builder.Services.AddVitreousHandlers(
-    opt => opt.DefaultHandlerLifetime = ServiceLifetime.Scoped,
     typeof(CreateOrderHandler).Assembly,
     typeof(SqlOrderRepository).Assembly
 );
 ```
-
-#### Comparison
 
 | | `AddVitreousHandlers()` | `AddVitreousHandlers(assemblies)` |
 |---|---|---|
@@ -390,9 +388,8 @@ builder.Services.AddVitreousHandlers(
 
 ### Installation
 
-```xml
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.DevUI -->
-<PackageReference Include="Vitreous.DevUI" Version="0.1.0" />
+```
+dotnet add package Vitreous.DevUI
 ```
 
 ```csharp
@@ -450,9 +447,8 @@ Vitreous provides two caching packages. Use `Vitreous.Caching` for any `IDistrib
 
 ### IDistributedCache backend
 
-```xml
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.Caching -->
-<PackageReference Include="Vitreous.Caching" Version="0.1.0" />
+```
+dotnet add package Vitreous.Caching
 ```
 
 ```csharp
@@ -478,19 +474,12 @@ public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
     public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(5);
     public TimeSpan? SlidingExpiration  => null;
 }
-
-public sealed record ListOrdersQuery : ICacheableQuery<IReadOnlyList<OrderDto>>
-{
-    public string CacheKey              => "orders:list";
-    public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(2);
-    public TimeSpan? SlidingExpiration  => null;
-}
 ```
 
-- `CacheKey` must uniquely represent the query. Include every parameter that influences the result.
+- `CacheKey` must uniquely represent the query — include every parameter that influences the result.
 - `AbsoluteExpiration` takes precedence over `SlidingExpiration` if both are set.
 - `SlidingExpiration` resets the TTL on each cache hit. Not supported by the Redis backend (see below).
-- The handler interface (`IQueryHandler<,>`) is unchanged — the query type simply changes its base interface.
+- The handler interface (`IQueryHandler<,>`) is unchanged.
 
 #### Invalidating cache entries after a command
 
@@ -502,21 +491,13 @@ public sealed record CreateOrderCommand(Guid CustomerId) : ICommand<Guid>, IInva
     IReadOnlyList<string> IInvalidatesCache.CacheKeys       => ["orders:list"];
     IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => []; // tags: Redis backend only
 }
-
-public sealed record DeleteOrderCommand(Guid OrderId) : ICommand<bool>, IInvalidatesCache
-{
-    IReadOnlyList<string> IInvalidatesCache.CacheKeys       => [$"order:{OrderId}", "orders:list"];
-    IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => [];
-}
 ```
 
 Invalidation only runs when the command returns a success result. Cache removal failures are logged as warnings and do not fail the command.
 
-> **Note on `ICommand` vs `ICommand<bool>`:** `CacheInvalidationBehavior` is typed as `IPipelineBehavior<TMessage, TResult>`. Void commands (`ICommand`) now also participate in this pipeline with `TResult = Unit`, so `IInvalidatesCache` works on void commands too — no need to make the command `ICommand<bool>` purely for cache invalidation.
+> **Note:** `IInvalidatesCache` works on void commands (`ICommand`) too — no need to use `ICommand<bool>` purely for cache invalidation.
 
 #### Behavior pipeline order
-
-When registered together, the pipeline stack (outermost to innermost) is:
 
 ```
 TracingBehavior          ← DevUI, always outermost
@@ -526,15 +507,12 @@ TracingBehavior          ← DevUI, always outermost
                  └─ handler
 ```
 
-Tracing and logging always execute, even on cache hits.
-
 ---
 
 ### Redis backend
 
-```xml
-<!-- Replace 0.1.0 with the latest version from https://www.nuget.org/packages/Vitreous.Caching.Redis -->
-<PackageReference Include="Vitreous.Caching.Redis" Version="0.1.0" />
+```
+dotnet add package Vitreous.Caching.Redis
 ```
 
 ```csharp
@@ -550,7 +528,7 @@ Do **not** call `AddVitreousCaching()` alongside `AddVitreousRedisCaching()` —
 
 #### Tag-based invalidation
 
-The Redis backend adds support for the `Tags` property on `ICacheableQuery<TResult>` and `InvalidatesTags` on `IInvalidatesCache`. Tags allow invalidating many cache entries at once without knowing every key individually.
+Tags allow invalidating many cache entries at once without knowing every key individually.
 
 ```csharp
 public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
@@ -558,29 +536,13 @@ public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
     public string CacheKey              => $"order:{OrderId}";
     public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(5);
     public TimeSpan? SlidingExpiration  => null;
-
-    // Stored under the "orders" and "order:{id}" tags
     public IReadOnlyList<string> Tags   => ["orders", $"order:{OrderId}"];
 }
 
-public sealed record ListOrdersQuery : ICacheableQuery<IReadOnlyList<OrderDto>>
-{
-    public string CacheKey              => "orders:list";
-    public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(2);
-    public TimeSpan? SlidingExpiration  => null;
-    public IReadOnlyList<string> Tags   => ["orders"];
-}
-
-// Invalidates the "orders" tag — removes every key that was stored under it
+// Invalidates the "orders" tag — removes every key stored under it
 public sealed record CreateOrderCommand(Guid CustomerId) : ICommand<Guid>, IInvalidatesCache
 {
     IReadOnlyList<string> IInvalidatesCache.CacheKeys       => ["orders:list"];
-    IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => ["orders"];
-}
-
-public sealed record DeleteOrderCommand(Guid OrderId) : ICommand<bool>, IInvalidatesCache
-{
-    IReadOnlyList<string> IInvalidatesCache.CacheKeys       => [$"order:{OrderId}", "orders:list"];
     IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => ["orders"];
 }
 ```
@@ -591,13 +553,11 @@ Internally, each tag is a Redis Set. When a value is written, its key is added t
 
 #### Sliding expiration
 
-`SlidingExpiration` on `ICacheableQuery<TResult>` is not enforced by the Redis backend. If `AbsoluteExpiration` is `null`, the `SlidingExpiration` value is used as a fixed TTL for the Redis entry (not a true sliding window). Use the `IDistributedCache` backend if you need genuine sliding expiration semantics.
+`SlidingExpiration` is not enforced by the Redis backend. If `AbsoluteExpiration` is `null`, the `SlidingExpiration` value is used as a fixed TTL (not a true sliding window). Use the `IDistributedCache` backend if you need genuine sliding expiration semantics.
 
 ---
 
 ## 4. Putting it all together
-
-A minimal `Program.cs` using every package:
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -605,16 +565,13 @@ var builder = WebApplication.CreateBuilder(args);
 // Core mediator (source-generated dispatcher + handler discovery)
 builder.Services.AddVitreousHandlers();
 
-// Custom pipeline behavior (registered before caching so it wraps everything except tracing)
+// Custom pipeline behavior
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
-// Caching — choose one of the following:
-//   IDistributedCache backend (in-process):
+// Caching — choose one:
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddVitreousCaching();
-
-//   Redis backend (comment out the two lines above and use this instead):
-// builder.Services.AddVitreousRedisCaching(options =>
+// or: builder.Services.AddVitreousRedisCaching(options =>
 // {
 //     options.ConnectionString = builder.Configuration.GetConnectionString("Redis");
 // });
@@ -628,7 +585,6 @@ var app = builder.Build();
 if (app.Environment.IsDevelopment())
     app.UseVitreousDevUI();
 
-// Map your endpoints
 app.MapPost("/orders", async (CreateOrderCommand cmd, ISender sender) =>
     (await sender.Send(cmd)).Match(
         id  => Results.Created($"/orders/{id}", new { id }),
@@ -641,13 +597,6 @@ app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender) =>
 
 app.Run();
 ```
-
-With this setup:
-
-- Every dispatch goes through `TracingBehavior → LoggingBehavior → CacheInvalidationBehavior → CachingBehavior → handler`
-- Query results are cached; cache hits skip the handler and are marked as `Cached` in the DevUI
-- Commands that implement `IInvalidatesCache` automatically evict stale entries on success
-- The developer dashboard is available at `http://localhost:{port}/vitreous`
 
 ---
 

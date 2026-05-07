@@ -58,3 +58,6 @@ lcov.info
 
 # ── Publish profiles ──────────────────────────────────────────────────────────
 **/Properties/PublishProfiles/
+
+# ── Benchmark artifacts ───────────────────────────────────────────────────────
+BenchmarkDotNet.Artifacts/

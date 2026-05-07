@@ -7,7 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.1.0-beta1] - 2026-05-02
+## [0.1.0-beta.2] - 2026-05-06
+
+### Changed
+
+- **`PipelineExecutor`** — Added allocation-free fast paths for commands, queries, and notifications when no pipeline behaviors are registered. Skips `Reverse()` and delegate-chain construction entirely, reducing overhead in the zero-behavior case.
+- **`PipelineExecutor`** — Void command dispatch (`ExecuteVoid`) now uses a non-async fast path when no behaviors are registered, eliminating `Unit` boxing and async state machine overhead.
+- **`SequentialPublisher`** — Eliminates the `.ToArray()` re-allocation on `GetServices` results by using the DI container's backing array directly. Adds fast paths for the no-handler case (`ValueTask.CompletedTask` returned immediately, skipping behavior resolution), single-handler/no-behavior case (handler's `ValueTask` returned directly), and multi-handler/no-behavior case (skips delegate chain construction).
+
+---
+
+## [0.1.0-beta.1] - 2026-05-02
 
 ### Added
 
