@@ -1,7 +1,12 @@
 # Vitreous
 
-[![NuGet Version](https://img.shields.io/nuget/v/Vitreous.svg)](https://www.nuget.org/packages/Vitreous)
-[![NuGet Downloads](https://img.shields.io/nuget/dt/Vitreous.svg)](https://www.nuget.org/packages/Vitreous)
+[![Vitreous](https://img.shields.io/nuget/v/Vitreous.svg?label=Vitreous)](https://www.nuget.org/packages/Vitreous)
+[![Downloads](https://img.shields.io/nuget/dt/Vitreous.svg?label=downloads)](https://www.nuget.org/packages/Vitreous)
+
+[![SourceGeneration](https://img.shields.io/nuget/v/Vitreous.SourceGeneration.svg?label=SourceGeneration)](https://www.nuget.org/packages/Vitreous.SourceGeneration)
+[![DevUI](https://img.shields.io/nuget/v/Vitreous.DevUI.svg?label=DevUI)](https://www.nuget.org/packages/Vitreous.DevUI)
+[![Caching](https://img.shields.io/nuget/v/Vitreous.Caching.svg?label=Caching)](https://www.nuget.org/packages/Vitreous.Caching)
+[![Caching.Redis](https://img.shields.io/nuget/v/Vitreous.Caching.Redis.svg?label=Caching.Redis)](https://www.nuget.org/packages/Vitreous.Caching.Redis)
 
 A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, .NET 9, and .NET 10.
 
