@@ -7,6 +7,7 @@ public sealed class PipelineExecutorTests
     private sealed record TestQuery : IQuery<int>;
     private sealed record TestVoidCommand : ICommand;
     private sealed record TestNotification : INotification;
+    private sealed record TestStreamQuery : IStreamQuery<int>;
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -21,6 +22,31 @@ public sealed class PipelineExecutorTests
 
     private static NotificationHandlerDelegate<TestNotification> NotificationTerminal(List<string> log) =>
         (_, _) => { log.Add("terminal"); return ValueTask.CompletedTask; };
+
+    private static StreamQueryHandlerDelegate<TestStreamQuery, int> StreamTerminal(int[] items) =>
+        (_, _) => ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Ok(ToAsyncEnumerable(items)));
+
+    private static StreamQueryHandlerDelegate<TestStreamQuery, int> LoggingStreamTerminal(List<string> log, int[] items) =>
+        (_, _) =>
+        {
+            log.Add("terminal");
+            return ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Ok(ToAsyncEnumerable(items)));
+        };
+
+    private static async IAsyncEnumerable<T> ToAsyncEnumerable<T>(IEnumerable<T> items)
+    {
+        foreach (var item in items)
+            yield return item;
+        await Task.CompletedTask;
+    }
+
+    private static async Task<List<int>> Drain(IAsyncEnumerable<int> stream)
+    {
+        var list = new List<int>();
+        await foreach (var item in stream)
+            list.Add(item);
+        return list;
+    }
 
     // ── Execute<TMessage, TResult> ────────────────────────────────────────────
 
@@ -167,6 +193,99 @@ public sealed class PipelineExecutorTests
         log.Should().Equal("B1:before", "B2:before", "terminal", "B2:after", "B1:after");
     }
 
+    // ── ExecuteStream ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task ExecuteStream_NoBehaviors_CallsTerminalAndYieldsItems()
+    {
+        var result = await PipelineExecutor.ExecuteStream(
+            new TestStreamQuery(),
+            StreamTerminal([1, 2, 3]),
+            [],
+            CancellationToken.None);
+
+        result.IsSuccess.Should().BeTrue();
+        var items = await Drain(result.Value);
+        items.Should().Equal(1, 2, 3);
+    }
+
+    [Fact]
+    public async Task ExecuteStream_SingleBehavior_WrapsTerminal()
+    {
+        var log = new List<string>();
+        var behaviors = new[] { new StreamOrderBehavior(log, "B1") };
+
+        var result = await PipelineExecutor.ExecuteStream(
+            new TestStreamQuery(),
+            LoggingStreamTerminal(log, [7]),
+            behaviors,
+            CancellationToken.None);
+
+        // Behaviors run before the stream is opened
+        log.Should().Equal("B1:before", "terminal", "B1:after");
+        result.IsSuccess.Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task ExecuteStream_MultipleBehaviors_FirstRegisteredIsOutermostWrap()
+    {
+        var log = new List<string>();
+        var behaviors = new IStreamPipelineBehavior<TestStreamQuery, int>[]
+        {
+            new StreamOrderBehavior(log, "B1"),
+            new StreamOrderBehavior(log, "B2"),
+            new StreamOrderBehavior(log, "B3"),
+        };
+
+        await PipelineExecutor.ExecuteStream(
+            new TestStreamQuery(),
+            LoggingStreamTerminal(log, []),
+            behaviors,
+            CancellationToken.None);
+
+        log.Should().Equal(
+            "B1:before", "B2:before", "B3:before",
+            "terminal",
+            "B3:after", "B2:after", "B1:after");
+    }
+
+    [Fact]
+    public async Task ExecuteStream_BehaviorShortCircuits_TerminalIsNotCalled()
+    {
+        var terminalCalled = false;
+        var shortCircuitError = new Error("BLOCKED", "short-circuited");
+
+        var behaviors = new IStreamPipelineBehavior<TestStreamQuery, int>[]
+        {
+            new StreamShortCircuitBehavior(shortCircuitError)
+        };
+
+        var result = await PipelineExecutor.ExecuteStream(
+            new TestStreamQuery(),
+            (_, _) => { terminalCalled = true; return ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Ok(ToAsyncEnumerable(Array.Empty<int>()))); },
+            behaviors,
+            CancellationToken.None);
+
+        terminalCalled.Should().BeFalse();
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().Be(shortCircuitError);
+    }
+
+    [Fact]
+    public async Task ExecuteStream_CancellationToken_PropagatedToTerminal()
+    {
+        using var cts = new CancellationTokenSource();
+        CancellationToken received = default;
+
+        await PipelineExecutor.ExecuteStream(
+            new TestStreamQuery(),
+            (_, ct) => { received = ct; return ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Ok(ToAsyncEnumerable(Array.Empty<int>()))); },
+            [],
+            cts.Token);
+
+        received.Should().Be(cts.Token);
+    }
+
     // ── ExecuteNotification ───────────────────────────────────────────────────
 
     [Fact]
@@ -266,5 +385,30 @@ public sealed class PipelineExecutorTests
             await next(notification, ct);
             log.Add($"{name}:after");
         }
+    }
+
+    private sealed class StreamOrderBehavior(List<string> log, string name)
+        : IStreamPipelineBehavior<TestStreamQuery, int>
+    {
+        public async ValueTask<Result<IAsyncEnumerable<int>>> Handle(
+            TestStreamQuery message,
+            StreamQueryHandlerDelegate<TestStreamQuery, int> next,
+            CancellationToken ct)
+        {
+            log.Add($"{name}:before");
+            var result = await next(message, ct);
+            log.Add($"{name}:after");
+            return result;
+        }
+    }
+
+    private sealed class StreamShortCircuitBehavior(Error error)
+        : IStreamPipelineBehavior<TestStreamQuery, int>
+    {
+        public ValueTask<Result<IAsyncEnumerable<int>>> Handle(
+            TestStreamQuery message,
+            StreamQueryHandlerDelegate<TestStreamQuery, int> next,
+            CancellationToken ct) =>
+            ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Fail(error));
     }
 }

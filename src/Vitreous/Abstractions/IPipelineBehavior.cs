@@ -64,3 +64,34 @@ public interface INotificationPipelineBehavior<TNotification>
         NotificationHandlerDelegate<TNotification> next,
         CancellationToken ct = default);
 }
+
+/// <summary>
+/// A delegate representing the next step in a stream query pipeline.
+/// Returns a <see cref="Result{T}"/> wrapping the lazy <see cref="IAsyncEnumerable{TResult}"/>
+/// so that setup failures short-circuit before any item is produced.
+/// </summary>
+/// <typeparam name="TMessage">The stream query type.</typeparam>
+/// <typeparam name="TResult">The type of each item yielded by the stream.</typeparam>
+public delegate ValueTask<Result<IAsyncEnumerable<TResult>>> StreamQueryHandlerDelegate<TMessage, TResult>(
+    TMessage message, CancellationToken ct);
+
+/// <summary>
+/// Cross-cutting behavior that wraps the dispatch of a stream query.
+/// Behaviors execute before the stream is opened and can short-circuit with a
+/// <see cref="Result{T}"/> failure before any item is produced.
+/// </summary>
+/// <typeparam name="TMessage">
+/// The stream query type — must implement <see cref="IStreamQuery{TResult}"/>.
+/// </typeparam>
+/// <typeparam name="TResult">The type of each item yielded by the stream.</typeparam>
+public interface IStreamPipelineBehavior<TMessage, TResult>
+    where TMessage : IStreamQuery<TResult>
+{
+    /// <summary>
+    /// Executes this behavior step, calling <paramref name="next"/> to continue the pipeline.
+    /// </summary>
+    ValueTask<Result<IAsyncEnumerable<TResult>>> Handle(
+        TMessage message,
+        StreamQueryHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default);
+}

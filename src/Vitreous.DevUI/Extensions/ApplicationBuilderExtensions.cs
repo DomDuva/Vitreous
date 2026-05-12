@@ -54,6 +54,27 @@ public static class ApplicationBuilderExtensions
                 tracingBehaviorType));
         }
 
+        // StreamTracingBehavior must be the outermost IStreamPipelineBehavior<,> registration
+        // for the same reason — it records the full setup phase including any inner behaviors.
+        var streamPipelineBehaviorType = typeof(IStreamPipelineBehavior<,>);
+        var streamTracingBehaviorType  = typeof(StreamTracingBehavior<,>);
+
+        if (!services.Any(sd =>
+                sd.ServiceType        == streamPipelineBehaviorType &&
+                sd.ImplementationType == streamTracingBehaviorType))
+        {
+            var insertAt = services
+                .Select((sd, i) => (sd, i))
+                .Where(x => x.sd.ServiceType == streamPipelineBehaviorType)
+                .Select(x => x.i)
+                .DefaultIfEmpty(services.Count)
+                .First();
+
+            services.Insert(insertAt, ServiceDescriptor.Singleton(
+                streamPipelineBehaviorType,
+                streamTracingBehaviorType));
+        }
+
         return services;
     }
 

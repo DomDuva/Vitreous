@@ -9,7 +9,20 @@ public enum MessageCategory
 {
     Command,
     Query,
-    Notification
+    Notification,
+    StreamQuery
+}
+
+/// <summary>
+/// Indicates which lifecycle event a stream trace represents.
+/// </summary>
+public enum StreamPhase
+{
+    /// <summary>The stream was opened (setup completed, items may start flowing).</summary>
+    Opened,
+
+    /// <summary>The stream enumerator was disposed (all items consumed or iteration abandoned).</summary>
+    Closed
 }
 
 /// <summary>
@@ -70,6 +83,27 @@ public sealed class ExecutionTrace
 
     /// <summary>Optional correlation identifier from <c>Activity.Current</c> or HTTP headers.</summary>
     public string? CorrelationId { get; init; }
+
+    // ── Stream-specific properties ─────────────────────────────────────────────
+
+    /// <summary>
+    /// Shared identifier linking the "opened" and "closed" traces of a single stream dispatch.
+    /// <see langword="null"/> for non-stream traces.
+    /// </summary>
+    public Guid? StreamId { get; init; }
+
+    /// <summary>
+    /// Indicates whether this trace is the "opened" or "closed" event of a stream.
+    /// <see langword="null"/> for non-stream traces.
+    /// </summary>
+    public StreamPhase? StreamPhase { get; init; }
+
+    /// <summary>
+    /// Number of items yielded before the enumerator was disposed.
+    /// Only populated on <see cref="Tracing.StreamPhase.Closed"/> traces;
+    /// <see langword="null"/> otherwise.
+    /// </summary>
+    public int? ItemCount { get; init; }
 }
 
 /// <summary>

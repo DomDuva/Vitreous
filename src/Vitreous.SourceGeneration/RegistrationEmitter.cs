@@ -92,6 +92,9 @@ internal static class RegistrationEmitter
         // ISender.Send<TResult>(IQuery<TResult>)
         EmitQuerySend(sb, handlers);
 
+        // ISender.CreateStream<TResult>(IStreamQuery<TResult>)
+        EmitStreamQueryCreateStream(sb, handlers);
+
         // IPublisher.Publish<TNotification>
         EmitPublish(sb, handlers);
 
@@ -236,6 +239,51 @@ internal static class RegistrationEmitter
     }
 
     // -------------------------------------------------------------------------
+    // CreateStream<TResult>(IStreamQuery<TResult>)
+    // -------------------------------------------------------------------------
+
+    private static void EmitStreamQueryCreateStream(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
+    {
+        var streamQueries = handlers.Where(h => h.Kind == HandlerKind.StreamQuery).ToList();
+
+        sb.AppendLine("    /// <inheritdoc/>");
+        sb.AppendLine("    public async ValueTask<Result<System.Collections.Generic.IAsyncEnumerable<TResult>>> CreateStream<TResult>(");
+        sb.AppendLine("        IStreamQuery<TResult> query,");
+        sb.AppendLine("        CancellationToken ct = default)");
+        sb.AppendLine("    {");
+
+        if (streamQueries.Count == 0)
+        {
+            sb.AppendLine("        throw new InvalidOperationException(");
+            sb.AppendLine("            $\"No handler registered for stream query '{query.GetType().Name}'.\");");
+        }
+        else
+        {
+            foreach (var h in streamQueries)
+            {
+                sb.AppendLine($"        if (query is {h.MessageFullName} __sq_{Sanitize(h.MessageTypeName)})");
+                sb.AppendLine($"            return (Result<System.Collections.Generic.IAsyncEnumerable<TResult>>)(object)await ExecuteStreamQuery<{h.MessageFullName}, {h.ResultFullName}>(__sq_{Sanitize(h.MessageTypeName)}, ct);");
+            }
+            sb.AppendLine("        throw new InvalidOperationException(");
+            sb.AppendLine("            $\"No handler registered for stream query '{query.GetType().Name}'.\");");
+        }
+
+        sb.AppendLine("    }");
+        sb.AppendLine();
+
+        sb.AppendLine("    private ValueTask<Result<System.Collections.Generic.IAsyncEnumerable<TResult>>> ExecuteStreamQuery<TQuery, TResult>(");
+        sb.AppendLine("        TQuery query, CancellationToken ct)");
+        sb.AppendLine("        where TQuery : IStreamQuery<TResult>");
+        sb.AppendLine("    {");
+        sb.AppendLine("        var handler = _services.GetRequiredService<IStreamQueryHandler<TQuery, TResult>>();");
+        sb.AppendLine("        var behaviors = _services.GetServices<IStreamPipelineBehavior<TQuery, TResult>>();");
+        sb.AppendLine("        StreamQueryHandlerDelegate<TQuery, TResult> terminal = handler.Handle;");
+        sb.AppendLine("        return PipelineExecutor.ExecuteStream(query, terminal, behaviors, ct);");
+        sb.AppendLine("    }");
+        sb.AppendLine();
+    }
+
+    // -------------------------------------------------------------------------
     // Publish<TNotification>
     // -------------------------------------------------------------------------
 
@@ -273,6 +321,8 @@ internal static class RegistrationEmitter
             $"IQueryHandler<{h.MessageFullName}, {h.ResultFullName}>",
         HandlerKind.Notification =>
             $"INotificationHandler<{h.MessageFullName}>",
+        HandlerKind.StreamQuery =>
+            $"IStreamQueryHandler<{h.MessageFullName}, {h.ResultFullName}>",
         _ => throw new ArgumentOutOfRangeException(nameof(h.Kind))
     };
 

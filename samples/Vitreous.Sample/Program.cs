@@ -90,6 +90,21 @@ app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToke
 .WithDescription("Returns 404 with error code NOT_FOUND if the order does not exist.")
 .WithTags("Orders");
 
+// GET /orders/stream/tick
+// Yields ?count= (default 5, max 20) fake orders at one-per-second so that the
+// DevUI live timer and STREAMING status are easy to observe without any seed data.
+app.MapGet("/orders/stream/tick", async ([AsParameters] TickStreamRequest req, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.CreateStream<OrderDto>(new TickStreamQuery(req.Count ?? 5), ct);
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
+        : Results.Problem(result.Error.Message);
+})
+.WithName("TickStream")
+.WithSummary("Tick stream — fake orders, one per second")
+.WithDescription("Emits Count fake OrderDto objects at a rate of one per second then stops. Demonstrates the DevUI live-streaming row (STREAMING status, ticking duration). Count defaults to 5, max 20.")
+.WithTags("Orders");
+
 // DELETE /orders/{id}
 app.MapDelete("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
 {
@@ -245,6 +260,8 @@ app.Run();
 // ── Request models ────────────────────────────────────────────────────────────
 
 public sealed record CreateOrderRequest(string CustomerName, string Product, int Quantity);
+
+public sealed record TickStreamRequest(int? Count);
 
 // Allow integration tests to reference the implicit Program class
 public partial class Program { }

@@ -24,4 +24,14 @@ public interface ISender
     ValueTask<Result<TResult>> Send<TResult>(
         IQuery<TResult> query,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Opens a stream query and returns a lazy sequence of <typeparamref name="TResult"/> items.
+    /// The <see cref="Result{T}"/> wrapper allows setup failures (validation, authorization) to be
+    /// signalled before any item is produced. Once the stream is open, items flow as plain
+    /// <typeparamref name="TResult"/>.
+    /// </summary>
+    ValueTask<Result<IAsyncEnumerable<TResult>>> CreateStream<TResult>(
+        IStreamQuery<TResult> query,
+        CancellationToken ct = default);
 }

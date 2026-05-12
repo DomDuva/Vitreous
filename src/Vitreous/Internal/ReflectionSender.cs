@@ -71,6 +71,26 @@ internal sealed class ReflectionSender : ISender
         return PipelineExecutor.Execute(query, terminal, behaviors, ct);
     }
 
+    public ValueTask<Result<IAsyncEnumerable<TResult>>> CreateStream<TResult>(
+        IStreamQuery<TResult> query,
+        CancellationToken ct = default)
+    {
+        var handlerType = typeof(IStreamQueryHandler<,>)
+            .MakeGenericType(query.GetType(), typeof(TResult));
+
+        var handler = _services.GetService(handlerType)
+            ?? throw new InvalidOperationException(
+                $"No handler registered for stream query '{query.GetType().Name}'. " +
+                "Implement 'IStreamQueryHandler<TQuery, TResult>' and ensure AddVitreous() is called.");
+
+        var handleMethod = handlerType.GetMethod("Handle")!;
+        StreamQueryHandlerDelegate<IStreamQuery<TResult>, TResult> terminal =
+            (msg, token) => (ValueTask<Result<IAsyncEnumerable<TResult>>>)handleMethod.Invoke(handler, [msg, token])!;
+
+        var behaviors = GetStreamBehaviors<IStreamQuery<TResult>, TResult>(_services);
+        return PipelineExecutor.ExecuteStream(query, terminal, behaviors, ct);
+    }
+
     // -------------------------------------------------------------------------
     // Behavior resolution helpers
     // -------------------------------------------------------------------------
@@ -82,4 +102,9 @@ internal sealed class ReflectionSender : ISender
     private static IEnumerable<IPipelineBehavior<ICommand, Unit>> GetVoidBehaviors(
         IServiceProvider services) =>
         services.GetServices<IPipelineBehavior<ICommand, Unit>>();
+
+    private static IEnumerable<IStreamPipelineBehavior<TMessage, TResult>> GetStreamBehaviors<TMessage, TResult>(
+        IServiceProvider services)
+        where TMessage : IStreamQuery<TResult> =>
+        services.GetServices<IStreamPipelineBehavior<TMessage, TResult>>();
 }

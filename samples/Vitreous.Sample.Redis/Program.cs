@@ -113,6 +113,21 @@ app.MapDelete("/orders/{id:guid}", async (Guid id, ISender sender, CancellationT
 .WithDescription("Returns 404 with error code NOT_FOUND if the order does not exist. Atomically invalidates the order's cache entry, the list, and all entries tagged 'orders' via Redis.")
 .WithTags("Orders");
 
+// GET /orders/stream/tick
+// Yields ?count= (default 5, max 20) fake orders at one-per-second so that the
+// DevUI live timer and STREAMING status are easy to observe without any seed data.
+app.MapGet("/orders/stream/tick", async ([AsParameters] TickStreamRequest req, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.CreateStream<OrderDto>(new TickStreamQuery(req.Count ?? 5), ct);
+    return result.IsSuccess
+        ? Results.Ok(result.Value)
+        : Results.Problem(result.Error.Message);
+})
+.WithName("TickStream")
+.WithSummary("Tick stream — fake orders, one per second")
+.WithDescription("Emits Count fake OrderDto objects at a rate of one per second then stops. Demonstrates the DevUI live-streaming row (STREAMING status, ticking duration). Count defaults to 5, max 20.")
+.WithTags("Orders");
+
 // ── Failure Showcase Endpoints ────────────────────────────────────────────────
 // These commands and queries always return a Result failure so that you can
 // observe every error type in the Vitreous DevUI and connected API clients.
@@ -255,6 +270,8 @@ app.Run();
 // ── Request models ────────────────────────────────────────────────────────────
 
 public sealed record CreateOrderRequest(string CustomerName, string Product, int Quantity);
+
+public sealed record TickStreamRequest(int? Count);
 
 // Allow integration tests to reference the implicit Program class
 public partial class Program { }

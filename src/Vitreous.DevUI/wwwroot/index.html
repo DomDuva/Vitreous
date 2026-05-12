@@ -21,6 +21,7 @@
       --blue:      #3b82f6;
       --purple:    #a855f7;
       --green:     #22c55e;
+      --cyan:      #06b6d4;
       --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace;
       --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
     }
@@ -116,9 +117,10 @@
     }
     .pill:hover { border-color: var(--accent); color: var(--text); }
     .pill.active { background: var(--accent); border-color: var(--accent); color: #fff; }
-    .pill.command.active  { background: var(--blue);   border-color: var(--blue); }
-    .pill.query.active    { background: var(--green);  border-color: var(--green); }
-    .pill.notification.active { background: var(--purple); border-color: var(--purple); }
+    .pill.command.active      { background: var(--blue);    border-color: var(--blue); }
+    .pill.query.active        { background: var(--green);   border-color: var(--green); }
+    .pill.notification.active { background: var(--purple);  border-color: var(--purple); }
+    .pill.streamquery.active  { background: var(--cyan);    border-color: var(--cyan); }
     .pill.success.active  { background: var(--success); border-color: var(--success); }
     .pill.failure.active  { background: var(--error);   border-color: var(--error); }
 
@@ -187,10 +189,16 @@
 
     .trace-summary {
       display: grid;
-      grid-template-columns: 28px 80px 1fr 80px 90px 90px;
+      grid-template-columns: 28px 90px 1fr 90px 90px 90px;
       align-items: center;
       gap: 12px;
       padding: 10px 24px;
+    }
+
+    /* ── Pulse animation (used for in-progress streams) ─── */
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.35; }
     }
 
     .trace-indicator {
@@ -198,8 +206,12 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .trace-indicator.success { background: var(--success); }
-    .trace-indicator.failure { background: var(--error); }
+    .trace-indicator.success   { background: var(--success); }
+    .trace-indicator.failure   { background: var(--error); }
+    .trace-indicator.streaming {
+      background: var(--warning);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
 
     .category-badge {
       padding: 2px 8px;
@@ -213,6 +225,7 @@
     .category-badge.command      { background: rgba(59,130,246,0.15);  color: #60a5fa; }
     .category-badge.query        { background: rgba(34,197,94,0.15);   color: #4ade80; }
     .category-badge.notification { background: rgba(168,85,247,0.15);  color: #c084fc; }
+    .category-badge.streamquery  { background: rgba(6,182,212,0.15);   color: #22d3ee; }
 
     .trace-type {
       font-family: var(--font-mono);
@@ -241,8 +254,12 @@
       font-weight: 600;
       text-align: right;
     }
-    .trace-status.ok  { color: var(--success); }
-    .trace-status.err { color: var(--error); }
+    .trace-status.ok        { color: var(--success); }
+    .trace-status.err       { color: var(--error); }
+    .trace-status.streaming {
+      color: var(--warning);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
 
     .cached-badge {
       display: inline-block;
@@ -309,6 +326,23 @@
       font-style: italic;
       padding: 8px 0;
     }
+
+    /* ── Stream info box ─────────────────────────────────── */
+    .stream-info {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+      flex-wrap: wrap;
+    }
+    .stream-info-pill {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 14px;
+      font-size: 12px;
+      color: var(--muted);
+    }
+    .stream-info-pill strong { color: var(--text); }
 
     /* ── Log entries ─────────────────────────────────────── */
     .log-list { display: flex; flex-direction: column; gap: 4px; }
@@ -382,6 +416,7 @@
     <button class="pill command" data-filter="command">Command</button>
     <button class="pill query" data-filter="query">Query</button>
     <button class="pill notification" data-filter="notification">Notification</button>
+    <button class="pill streamquery" data-filter="streamquery">Stream</button>
   </div>
   <div class="filter-pills">
     <button class="pill success" data-filter="success">Success</button>
@@ -405,26 +440,32 @@
 
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
-  let allTraces   = [];
+  let allTraces    = [];
   let activeFilter = 'all';
   let activeOutcome = 'all';  // 'all' | 'success' | 'failure'
-  let searchText  = '';
-  let expandedId  = null;
+  let searchText   = '';
+  let expandedId   = null;
 
   // ── Stats ──────────────────────────────────────────────────────────────────
   function updateStats() {
     const total  = allTraces.length;
-    const errors = allTraces.filter(t => !t.isSuccess).length;
-    const durations = allTraces.map(t => t.duration).sort((a, b) => a - b);
+    const errors = allTraces.filter(t => !t.isSuccess && t.isComplete !== false).length;
+
+    // Exclude in-progress streams (no final duration yet) from percentile calculation
+    const completedDurations = allTraces
+      .filter(t => t.isComplete !== false)
+      .map(t => t.duration)
+      .filter(d => d != null)
+      .map(d => parseDurationMs(d))
+      .filter(ms => ms != null)
+      .sort((a, b) => a - b);
 
     document.getElementById('stat-total').textContent  = total;
     document.getElementById('stat-errors').textContent = errors;
 
-    if (durations.length > 0) {
-      const p50 = percentile(durations, 50);
-      const p95 = percentile(durations, 95);
-      document.getElementById('stat-p50').textContent = formatDuration(p50);
-      document.getElementById('stat-p95').textContent = formatDuration(p95);
+    if (completedDurations.length > 0) {
+      document.getElementById('stat-p50').textContent = formatMs(percentile(completedDurations, 50));
+      document.getElementById('stat-p95').textContent = formatMs(percentile(completedDurations, 95));
     } else {
       document.getElementById('stat-p50').textContent = '—';
       document.getElementById('stat-p95').textContent = '—';
@@ -439,11 +480,13 @@
   // ── Filtering ──────────────────────────────────────────────────────────────
   function filteredTraces() {
     return allTraces.filter(t => {
-      // category may arrive as a string ("command") or, defensively, as a number (0)
       const cat = String(t.category ?? '').toLowerCase();
       if (activeFilter !== 'all' && cat !== activeFilter) return false;
-      if (activeOutcome === 'success' && !t.isSuccess) return false;
-      if (activeOutcome === 'failure' &&  t.isSuccess) return false;
+      // For in-progress streams isSuccess is false until setup fails; treat them
+      // as 'success' for outcome filtering so they appear in the default view.
+      const effectiveSuccess = (cat === 'streamquery' && t.isComplete === false) ? true : t.isSuccess;
+      if (activeOutcome === 'success' && !effectiveSuccess) return false;
+      if (activeOutcome === 'failure' &&  effectiveSuccess) return false;
       if (searchText && !t.messageType?.toLowerCase().includes(searchText)) return false;
       return true;
     });
@@ -455,7 +498,6 @@
     const empty  = document.getElementById('empty-state');
     const traces = filteredTraces();
 
-    // Remove existing rows (keep empty-state)
     list.querySelectorAll('.trace-row').forEach(r => r.remove());
 
     if (traces.length === 0) {
@@ -464,7 +506,6 @@
     }
     empty.style.display = 'none';
 
-    // Render newest-first
     const reversed = [...traces].reverse();
     for (const trace of reversed) {
       list.appendChild(buildRow(trace));
@@ -476,18 +517,44 @@
     row.className = 'trace-row' + (trace.id === expandedId ? ' expanded' : '');
     row.dataset.id = trace.id;
 
-    const cat  = (trace.category ?? 'command').toLowerCase();
-    const ok   = trace.isSuccess;
-    const dur  = formatDuration(trace.duration);
+    const cat = (trace.category ?? 'command').toLowerCase();
     const time = formatTime(trace.timestamp);
+
+    // ── Stream query: special indicator, status and duration ──────────────
+    let indicatorClass, statusHtml, durText;
+
+    if (cat === 'streamquery') {
+      if (trace.isComplete === false) {
+        // In-progress: pulsing warning dot, live duration
+        indicatorClass = 'streaming';
+        statusHtml     = '<div class="trace-status streaming">STREAMING</div>';
+        durText        = formatMs(Date.now() - trace._startedAt);
+      } else if (trace.isSuccess) {
+        // Completed successfully
+        indicatorClass = 'success';
+        const items    = trace.itemCount ?? 0;
+        statusHtml     = `<div class="trace-status ok">${items} item${items !== 1 ? 's' : ''}</div>`;
+        durText        = formatDuration(trace.duration);
+      } else {
+        // Setup failed
+        indicatorClass = 'failure';
+        statusHtml     = '<div class="trace-status err">FAILED</div>';
+        durText        = formatDuration(trace.duration);
+      }
+    } else {
+      const ok   = trace.isSuccess;
+      indicatorClass = ok ? 'success' : 'failure';
+      statusHtml     = `<div class="trace-status ${ok ? 'ok' : 'err'}">${ok ? 'SUCCESS' : 'FAILURE'}</div>`;
+      durText        = formatDuration(trace.duration);
+    }
 
     row.innerHTML = `
       <div class="trace-summary">
-        <div class="trace-indicator ${ok ? 'success' : 'failure'}"></div>
-        <div class="category-badge ${cat}">${cat}</div>
+        <div class="trace-indicator ${indicatorClass}"></div>
+        <div class="category-badge ${cat}">${cat === 'streamquery' ? 'stream' : cat}</div>
         <div class="trace-type" title="${esc(trace.messageTypeFullName)}">${esc(trace.messageType)}${trace.isCacheHit ? '<span class="cached-badge">Cached</span>' : ''}</div>
-        <div class="trace-duration">${dur}</div>
-        <div class="trace-status ${ok ? 'ok' : 'err'}">${ok ? 'SUCCESS' : 'FAILURE'}</div>
+        <div class="trace-duration">${durText}</div>
+        ${statusHtml}
         <div class="trace-time">${time}</div>
       </div>
       <div class="trace-detail">
@@ -500,28 +567,55 @@
   }
 
   function buildDetail(trace) {
-    const tabs = [];
+    const cat    = (trace.category ?? '').toLowerCase();
+    const isStream = cat === 'streamquery';
+    const tabs   = [];
     const panels = [];
+
+    // Stream info row (only for stream queries)
+    let streamInfoHtml = '';
+    if (isStream) {
+      const statusLabel = trace.isComplete === false
+        ? '<span style="color:var(--warning)">In progress…</span>'
+        : (trace.isSuccess ? '<span style="color:var(--success)">Completed</span>' : '<span style="color:var(--error)">Failed</span>');
+      const itemsLabel  = trace.isComplete !== false && trace.isSuccess
+        ? `<strong>${trace.itemCount ?? 0}</strong>`
+        : '—';
+      const durLabel    = trace.isComplete === false
+        ? `<strong>${formatMs(Date.now() - trace._startedAt)}</strong>`
+        : `<strong>${formatDuration(trace.duration)}</strong>`;
+
+      streamInfoHtml = `
+        <div class="stream-info">
+          <div class="stream-info-pill">Status: ${statusLabel}</div>
+          <div class="stream-info-pill">Items emitted: ${itemsLabel}</div>
+          <div class="stream-info-pill">Duration: ${durLabel}</div>
+        </div>`;
+    }
 
     // Input tab
     tabs.push({ id: 'input', label: 'Input' });
     panels.push(`<div class="detail-panel active" data-panel="input">
+      ${streamInfoHtml}
       ${trace.serializedInput
         ? `<pre class="code-block">${esc(prettyJson(trace.serializedInput))}</pre>`
         : '<p class="no-data">No input captured.</p>'}
     </div>`);
 
-    // Output tab
-    tabs.push({ id: 'output', label: 'Output' });
+    // Output / Stream tab
+    const outputLabel = isStream ? 'Stream' : 'Output';
+    tabs.push({ id: 'output', label: outputLabel });
     panels.push(`<div class="detail-panel" data-panel="output">
-      ${trace.isSuccess && trace.serializedOutput
-        ? `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`
-        : trace.error
-          ? `<div class="error-box">
-               <div class="error-code">[${esc(trace.error.code)}]</div>
-               <div class="error-message">${esc(trace.error.message)}</div>
-             </div>`
-          : '<p class="no-data">No output.</p>'}
+      ${isStream
+        ? buildStreamOutput(trace)
+        : (trace.isSuccess && trace.serializedOutput
+          ? `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`
+          : trace.error
+            ? `<div class="error-box">
+                 <div class="error-code">[${esc(trace.error.code)}]</div>
+                 <div class="error-message">${esc(trace.error.message)}</div>
+               </div>`
+            : '<p class="no-data">No output.</p>')}
     </div>`);
 
     // Logs tab
@@ -539,6 +633,24 @@
       <div class="detail-tabs">${tabHtml}</div>
       <div class="detail-panels">${panels.join('')}</div>
     `;
+  }
+
+  function buildStreamOutput(trace) {
+    if (!trace.isSuccess && trace.error) {
+      return `<div class="error-box">
+        <div class="error-code">[${esc(trace.error.code)}]</div>
+        <div class="error-message">${esc(trace.error.message)}</div>
+      </div>`;
+    }
+    if (trace.isComplete === false) {
+      return '<p class="no-data">Stream is still in progress — items will be counted when it closes.</p>';
+    }
+    const n = trace.itemCount ?? 0;
+    const summary = `<p class="no-data">[Completed] ${n} item${n !== 1 ? 's' : ''} over ${formatDuration(trace.duration)}.</p>`;
+    if (trace.serializedOutput) {
+      return summary + `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`;
+    }
+    return summary;
   }
 
   function buildLogs(logs) {
@@ -576,7 +688,7 @@
     btn.addEventListener('click', () => {
       const f = btn.dataset.filter;
 
-      if (f === 'all' || f === 'command' || f === 'query' || f === 'notification') {
+      if (f === 'all' || f === 'command' || f === 'query' || f === 'notification' || f === 'streamquery') {
         document.querySelectorAll('[data-filter]').forEach(b => b.classList.remove('active'));
         activeFilter  = f;
         activeOutcome = 'all';
@@ -617,31 +729,105 @@
     const es = new EventSource(location.pathname.replace(/\/?$/, '') + '/events');
 
     es.onopen = () => {
-      dot.className   = 'status-dot connected';
+      dot.className     = 'status-dot connected';
       label.textContent = 'Live';
     };
 
     es.onmessage = e => {
       try {
         const trace = JSON.parse(e.data);
-        // Deduplicate by id (history replay may overlap with live)
-        if (!allTraces.find(t => t.id === trace.id)) {
-          allTraces.push(trace);
+        const cat   = String(trace.category ?? '').toLowerCase();
+
+        if (cat === 'streamquery') {
+          handleStreamTrace(trace);
+        } else {
+          // Standard command / query / notification
+          if (!allTraces.find(t => t.id === trace.id)) {
+            allTraces.push(trace);
+          }
+          updateStats();
+          render();
         }
-        updateStats();
-        render();
       } catch { /* ignore malformed events */ }
     };
 
     es.onerror = () => {
-      dot.className   = 'status-dot disconnected';
+      dot.className     = 'status-dot disconnected';
       label.textContent = 'Reconnecting…';
       es.close();
       setTimeout(connect, 3000);
     };
   }
 
+  // ── Stream trace merge logic ───────────────────────────────────────────────
+  // Each stream dispatch produces two raw traces sharing a StreamId:
+  //   Opened — emitted when setup completes (before any items flow)
+  //   Closed — emitted when the enumerator is disposed (all items counted)
+  //
+  // We merge both into one "virtual" entry in allTraces keyed by streamId so
+  // only a single row is ever displayed.  The row updates in place when Closed
+  // arrives, and the live timer patches the DOM every 200 ms between the two.
+  function handleStreamTrace(trace) {
+    const phase    = String(trace.streamPhase ?? '').toLowerCase();
+    const streamId = trace.streamId;
+    if (!streamId) return;
+
+    if (phase === 'opened') {
+      // Avoid duplicate on history replay
+      if (allTraces.find(t => t.id === streamId)) return;
+
+      allTraces.push({
+        id:                streamId,     // use streamId as the UI row key
+        category:          'streamquery',
+        messageType:       trace.messageType,
+        messageTypeFullName: trace.messageTypeFullName,
+        timestamp:         trace.timestamp,
+        isSuccess:         trace.isSuccess,
+        error:             trace.error ?? null,
+        serializedInput:   trace.serializedInput ?? null,
+        logs:              trace.logs ?? [],
+        isCacheHit:        false,
+        // stream-specific state
+        isComplete:        !trace.isSuccess,  // if setup failed, already complete
+        _startedAt:        Date.now(),
+        duration:          trace.isSuccess ? null : trace.duration,
+        itemCount:         null,
+      });
+
+      updateStats();
+      render();
+
+    } else if (phase === 'closed') {
+      const merged = allTraces.find(t => t.id === streamId);
+      if (!merged) return;   // Closed arrived before Opened (e.g., history replay edge case)
+
+      merged.isComplete       = true;
+      merged.isSuccess        = true;
+      merged.duration         = trace.duration;
+      merged.itemCount        = trace.itemCount;
+      merged.serializedOutput = trace.serializedOutput ?? null;
+      merged.logs             = trace.logs ?? [];
+
+      updateStats();
+      render();
+    }
+  }
+
   connect();
+
+  // ── Live timer for in-progress streams ────────────────────────────────────
+  // Instead of triggering a full re-render every tick, we patch only the
+  // .trace-duration cells of rows that are still streaming.  This avoids
+  // collapsing expanded rows and keeps the UI snappy.
+  setInterval(() => {
+    const inProgress = allTraces.filter(t => t.category === 'streamquery' && t.isComplete === false);
+    for (const t of inProgress) {
+      const row = document.querySelector(`.trace-row[data-id="${t.id}"]`);
+      if (!row) continue;
+      const durEl = row.querySelector('.trace-duration');
+      if (durEl) durEl.textContent = formatMs(Date.now() - t._startedAt);
+    }
+  }, 200);
 
   // ── Helpers ────────────────────────────────────────────────────────────────
   function esc(str) {
@@ -658,28 +844,32 @@
     catch { return json; }
   }
 
-  // Duration comes in as a TimeSpan string "00:00:00.0012345" or ticks
-  function formatDuration(raw) {
-    if (raw == null) return '—';
-    // If it's a string like "00:00:00.1234567"
+  // Parse a TimeSpan string or numeric value to milliseconds.
+  function parseDurationMs(raw) {
+    if (raw == null) return null;
     if (typeof raw === 'string') {
       const parts = raw.split(':');
       if (parts.length === 3) {
-        const ms = (parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])) * 1000;
-        return formatMs(ms);
+        return (parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2])) * 1000;
       }
-      return raw;
+      return null;
     }
-    // If it's a number (seconds? ticks?)
     if (typeof raw === 'number') {
-      // Assume it's .NET ticks (100ns units) if very large, else ms
-      if (raw > 1_000_000) return formatMs(raw / 10_000);
-      return formatMs(raw);
+      return raw > 1_000_000 ? raw / 10_000 : raw;
     }
-    return String(raw);
+    return null;
+  }
+
+  // Duration comes in as a TimeSpan string "00:00:00.0012345" or ticks
+  function formatDuration(raw) {
+    if (raw == null) return '—';
+    const ms = parseDurationMs(raw);
+    if (ms == null) return String(raw);
+    return formatMs(ms);
   }
 
   function formatMs(ms) {
+    if (ms == null) return '—';
     if (ms < 1)    return `${(ms * 1000).toFixed(0)}µs`;
     if (ms < 1000) return `${ms.toFixed(1)}ms`;
     return `${(ms / 1000).toFixed(2)}s`;
@@ -700,7 +890,6 @@
   function levelClass(level) {
     const name  = (typeof level === 'number' ? LOG_LEVELS[level] : level) ?? 'info';
     const lower = name.toLowerCase();
-    // LogLevel.Information serializes as "information"; CSS class is .info
     return lower === 'information' ? 'info' : lower;
   }
 </script>

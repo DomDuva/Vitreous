@@ -23,11 +23,17 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private const string CommandHandlerVoid       = "Vitreous.Abstractions.ICommandHandler`1";
     private const string QueryHandler             = "Vitreous.Abstractions.IQueryHandler`2";
     private const string NotificationHandler      = "Vitreous.Abstractions.INotificationHandler`1";
+    private const string StreamQueryHandler       = "Vitreous.Abstractions.IStreamQueryHandler`2";
 
     // Well-known message interface names (used for VIT001 — no handler found)
-    private const string ICommandWithResult = "Vitreous.Abstractions.ICommand`1";
-    private const string ICommandVoid       = "Vitreous.Abstractions.ICommand";
-    private const string IQueryInterface    = "Vitreous.Abstractions.IQuery`1";
+    private const string ICommandWithResult  = "Vitreous.Abstractions.ICommand`1";
+    private const string ICommandVoid        = "Vitreous.Abstractions.ICommand";
+    private const string IQueryInterface     = "Vitreous.Abstractions.IQuery`1";
+    private const string IStreamQueryInterface = "Vitreous.Abstractions.IStreamQuery`1";
+
+    // [EnumeratorCancellation] attribute full name (used for VIT003)
+    private const string EnumeratorCancellationAttribute =
+        "System.Runtime.CompilerServices.EnumeratorCancellationAttribute";
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
@@ -55,26 +61,32 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var iCommandHandlerVoid       = compilation.GetTypeByMetadataName(CommandHandlerVoid);
         var iQueryHandler             = compilation.GetTypeByMetadataName(QueryHandler);
         var iNotificationHandler      = compilation.GetTypeByMetadataName(NotificationHandler);
+        var iStreamQueryHandler       = compilation.GetTypeByMetadataName(StreamQueryHandler);
 
         if (iCommandHandlerWithResult is null && iCommandHandlerVoid is null &&
-            iQueryHandler is null && iNotificationHandler is null)
+            iQueryHandler is null && iNotificationHandler is null && iStreamQueryHandler is null)
         {
             // Vitreous.Abstractions not referenced — nothing to do
             return;
         }
 
         // Resolve message interface symbols (for VIT001)
-        var iCommand      = compilation.GetTypeByMetadataName(ICommandWithResult);
-        var iCommandVoidIf = compilation.GetTypeByMetadataName(ICommandVoid);
-        var iQuery        = compilation.GetTypeByMetadataName(IQueryInterface);
+        var iCommand         = compilation.GetTypeByMetadataName(ICommandWithResult);
+        var iCommandVoidIf   = compilation.GetTypeByMetadataName(ICommandVoid);
+        var iQuery           = compilation.GetTypeByMetadataName(IQueryInterface);
+        var iStreamQuery     = compilation.GetTypeByMetadataName(IStreamQueryInterface);
+
+        // Resolve [EnumeratorCancellation] for VIT003
+        var enumeratorCancellationAttr = compilation.GetTypeByMetadataName(EnumeratorCancellationAttribute);
 
         var discovered    = new List<HandlerInfo>();
         var messageTypes  = new List<MessageTypeInfo>();
 
         // Track message types that have handlers (to detect missing / duplicate registrations)
         // key = messageFullName, value = list of handler full names
-        var commandHandlers = new Dictionary<string, List<string>>();
-        var queryHandlers   = new Dictionary<string, List<string>>();
+        var commandHandlers     = new Dictionary<string, List<string>>();
+        var queryHandlers       = new Dictionary<string, List<string>>();
+        var streamQueryHandlers = new Dictionary<string, List<string>>();
 
         // ── Pass 1: current project's syntax trees ────────────────────────────
         foreach (var classDecl in classes)
@@ -90,17 +102,32 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 iCommandHandlerVoid,
                 iQueryHandler,
                 iNotificationHandler,
+                iStreamQueryHandler,
                 discovered,
                 commandHandlers,
-                queryHandlers);
+                queryHandlers,
+                streamQueryHandlers);
 
             TryCollectMessageType(
                 symbol,
                 iCommand,
                 iCommandVoidIf,
                 iQuery,
+                iStreamQuery,
                 messageTypes,
                 classDecl.GetLocation());
+
+            // VIT003 — check for missing [EnumeratorCancellation] on stream handler methods
+            if (iStreamQueryHandler is not null && enumeratorCancellationAttr is not null)
+            {
+                CheckEnumeratorCancellation(
+                    symbol,
+                    iStreamQueryHandler,
+                    enumeratorCancellationAttr,
+                    compilation,
+                    context,
+                    classDecl);
+            }
         }
 
         // ── Pass 2: referenced assemblies that reference Vitreous ─────────────
@@ -113,20 +140,24 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             iCommandHandlerVoid,
             iQueryHandler,
             iNotificationHandler,
+            iStreamQueryHandler,
             iCommand,
             iCommandVoidIf,
             iQuery,
+            iStreamQuery,
             discovered,
             commandHandlers,
             queryHandlers,
+            streamQueryHandlers,
             messageTypes);
 
         // Report VIT002 — ambiguous dispatch (multiple handlers per message)
         ReportDuplicateDiagnostics(context, commandHandlers);
         ReportDuplicateDiagnostics(context, queryHandlers);
+        ReportDuplicateDiagnostics(context, streamQueryHandlers);
 
-        // Report VIT001 — no handler found for a command/query type
-        ReportNoHandlerDiagnostics(context, messageTypes, commandHandlers, queryHandlers);
+        // Report VIT001 — no handler found for a command/query/stream-query type
+        ReportNoHandlerDiagnostics(context, messageTypes, commandHandlers, queryHandlers, streamQueryHandlers);
 
         // Emit source files
         var source1 = RegistrationEmitter.EmitServiceCollectionExtensions(discovered);
@@ -150,9 +181,11 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommandHandlerVoid,
         INamedTypeSymbol? iQueryHandler,
         INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iStreamQueryHandler,
         List<HandlerInfo> discovered,
         Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers)
+        Dictionary<string, List<string>> queryHandlers,
+        Dictionary<string, List<string>> streamQueryHandlers)
     {
         foreach (var iface in symbol.AllInterfaces)
         {
@@ -236,6 +269,26 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName:  msgType.Name,
                     Kind:             HandlerKind.Notification,
                     ResultFullName:   null));
+                continue;
+            }
+
+            // IStreamQueryHandler<TQuery, TResult>
+            if (iStreamQueryHandler is not null &&
+                SymbolEqualityComparer.Default.Equals(original, iStreamQueryHandler))
+            {
+                var msgType    = iface.TypeArguments[0];
+                var resultType = iface.TypeArguments[1];
+                var info = new HandlerInfo(
+                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
+                    HandlerClassName: symbol.Name,
+                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    MessageTypeName:  msgType.Name,
+                    Kind:             HandlerKind.StreamQuery,
+                    ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
+
+                discovered.Add(info);
+                AddToMultimap(streamQueryHandlers, info.MessageFullName, info.HandlerFullName);
             }
         }
     }
@@ -255,6 +308,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommand,
         INamedTypeSymbol? iCommandVoid,
         INamedTypeSymbol? iQuery,
+        INamedTypeSymbol? iStreamQuery,
         List<MessageTypeInfo> messageTypes,
         Location location)
     {
@@ -290,6 +344,20 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 return;
             }
 
+            // IStreamQuery<TResult>
+            if (iStreamQuery is not null &&
+                SymbolEqualityComparer.Default.Equals(original, iStreamQuery))
+            {
+                var resultType = iface.TypeArguments[0];
+                messageTypes.Add(new MessageTypeInfo(
+                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    MessageTypeName: symbol.Name,
+                    Kind:            HandlerKind.StreamQuery,
+                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                    Location:        location));
+                return;
+            }
+
             // ICommand (void) — non-generic, no type arguments
             if (iCommandVoid is not null &&
                 SymbolEqualityComparer.Default.Equals(original, iCommandVoid) &&
@@ -320,12 +388,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommandHandlerVoid,
         INamedTypeSymbol? iQueryHandler,
         INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iStreamQueryHandler,
         INamedTypeSymbol? iCommand,
         INamedTypeSymbol? iCommandVoidIf,
         INamedTypeSymbol? iQuery,
+        INamedTypeSymbol? iStreamQuery,
         List<HandlerInfo> discovered,
         Dictionary<string, List<string>> commandHandlers,
         Dictionary<string, List<string>> queryHandlers,
+        Dictionary<string, List<string>> streamQueryHandlers,
         List<MessageTypeInfo> messageTypes)
     {
         foreach (var reference in compilation.References)
@@ -345,12 +416,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 iCommandHandlerVoid,
                 iQueryHandler,
                 iNotificationHandler,
+                iStreamQueryHandler,
                 iCommand,
                 iCommandVoidIf,
                 iQuery,
+                iStreamQuery,
                 discovered,
                 commandHandlers,
                 queryHandlers,
+                streamQueryHandlers,
                 messageTypes);
         }
     }
@@ -376,12 +450,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iCommandHandlerVoid,
         INamedTypeSymbol? iQueryHandler,
         INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iStreamQueryHandler,
         INamedTypeSymbol? iCommand,
         INamedTypeSymbol? iCommandVoidIf,
         INamedTypeSymbol? iQuery,
+        INamedTypeSymbol? iStreamQuery,
         List<HandlerInfo> discovered,
         Dictionary<string, List<string>> commandHandlers,
         Dictionary<string, List<string>> queryHandlers,
+        Dictionary<string, List<string>> streamQueryHandlers,
         List<MessageTypeInfo> messageTypes)
     {
         foreach (var member in ns.GetMembers())
@@ -395,12 +472,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                         iCommandHandlerVoid,
                         iQueryHandler,
                         iNotificationHandler,
+                        iStreamQueryHandler,
                         iCommand,
                         iCommandVoidIf,
                         iQuery,
+                        iStreamQuery,
                         discovered,
                         commandHandlers,
                         queryHandlers,
+                        streamQueryHandlers,
                         messageTypes);
                     break;
 
@@ -412,15 +492,18 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                         iCommandHandlerVoid,
                         iQueryHandler,
                         iNotificationHandler,
+                        iStreamQueryHandler,
                         discovered,
                         commandHandlers,
-                        queryHandlers);
+                        queryHandlers,
+                        streamQueryHandlers);
                     // Referenced assemblies have no syntax trees — use Location.None
                     TryCollectMessageType(
                         type,
                         iCommand,
                         iCommandVoidIf,
                         iQuery,
+                        iStreamQuery,
                         messageTypes,
                         Location.None);
                     break;
@@ -457,23 +540,35 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// Emits VIT001 for every discovered command or query that has no corresponding handler.
-    /// Notifications are excluded — zero notification handlers is a valid configuration.
+    /// Emits VIT001 for every discovered command, query, or stream query that has no
+    /// corresponding handler. Notifications are excluded — zero notification handlers is valid.
     /// </summary>
     private static void ReportNoHandlerDiagnostics(
         SourceProductionContext context,
         List<MessageTypeInfo> messageTypes,
         Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers)
+        Dictionary<string, List<string>> queryHandlers,
+        Dictionary<string, List<string>> streamQueryHandlers)
     {
         foreach (var msg in messageTypes)
         {
-            var map = msg.Kind == HandlerKind.Query ? queryHandlers : commandHandlers;
+            var map = msg.Kind switch
+            {
+                HandlerKind.Query       => queryHandlers,
+                HandlerKind.StreamQuery => streamQueryHandlers,
+                _                       => commandHandlers
+            };
+
             if (map.ContainsKey(msg.MessageFullName))
                 continue;
 
-            var handlerKindWord = msg.Kind == HandlerKind.Query ? "Query" : "Command";
-            var resultSuffix    = msg.ResultFullName is not null ? $", {msg.ResultFullName}" : "";
+            var handlerKindWord = msg.Kind switch
+            {
+                HandlerKind.Query       => "Query",
+                HandlerKind.StreamQuery => "StreamQuery",
+                _                       => "Command"
+            };
+            var resultSuffix = msg.ResultFullName is not null ? $", {msg.ResultFullName}" : "";
 
             context.ReportDiagnostic(Diagnostic.Create(
                 DiagnosticDescriptors.NoHandlerFound,
@@ -481,6 +576,61 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 msg.MessageTypeName,
                 handlerKindWord,
                 resultSuffix));
+        }
+    }
+
+    /// <summary>
+    /// VIT003 — checks that every method on a stream query handler class that returns
+    /// <c>IAsyncEnumerable&lt;T&gt;</c> and accepts a <c>CancellationToken</c> parameter
+    /// decorates that parameter with <c>[EnumeratorCancellation]</c>.
+    /// </summary>
+    private static void CheckEnumeratorCancellation(
+        INamedTypeSymbol symbol,
+        INamedTypeSymbol iStreamQueryHandler,
+        INamedTypeSymbol enumeratorCancellationAttr,
+        Compilation compilation,
+        SourceProductionContext context,
+        ClassDeclarationSyntax classDecl)
+    {
+        // Only check classes that implement IStreamQueryHandler<,>
+        var implementsStreamHandler = symbol.AllInterfaces.Any(iface =>
+            SymbolEqualityComparer.Default.Equals(iface.OriginalDefinition, iStreamQueryHandler));
+
+        if (!implementsStreamHandler) return;
+
+        var cancellationTokenType = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+        if (cancellationTokenType is null) return;
+
+        // Inspect every method that returns IAsyncEnumerable<T>
+        foreach (var member in symbol.GetMembers().OfType<IMethodSymbol>())
+        {
+            if (member.ReturnType is not INamedTypeSymbol returnType) continue;
+
+            // Check if return type is IAsyncEnumerable<T> (original definition = IAsyncEnumerable`1)
+            var isAsyncEnumerable = returnType.OriginalDefinition.ToDisplayString() ==
+                "System.Collections.Generic.IAsyncEnumerable<T>";
+            if (!isAsyncEnumerable) continue;
+
+            // Find a CancellationToken parameter missing [EnumeratorCancellation]
+            foreach (var param in member.Parameters)
+            {
+                if (!SymbolEqualityComparer.Default.Equals(param.Type, cancellationTokenType))
+                    continue;
+
+                var hasAttr = param.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, enumeratorCancellationAttr));
+
+                if (!hasAttr)
+                {
+                    // Find the method location in the syntax tree for a precise squiggle
+                    var methodLocation = member.Locations.FirstOrDefault() ?? classDecl.GetLocation();
+                    context.ReportDiagnostic(Diagnostic.Create(
+                        DiagnosticDescriptors.MissingEnumeratorCancellation,
+                        methodLocation,
+                        member.Name,
+                        symbol.Name));
+                }
+            }
         }
     }
 

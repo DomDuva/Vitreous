@@ -32,5 +32,6 @@ internal enum HandlerKind
     Command,        // ICommandHandler<TCommand, TResult>
     VoidCommand,    // ICommandHandler<TCommand>
     Query,          // IQueryHandler<TQuery, TResult>
-    Notification    // INotificationHandler<TNotification>
+    Notification,   // INotificationHandler<TNotification>
+    StreamQuery     // IStreamQueryHandler<TQuery, TResult>
 }
