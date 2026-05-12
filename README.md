@@ -55,6 +55,7 @@ Vitreous is **~31× faster** to start and allocates **~14× less** — because `
    - [Messages](#messages)
    - [Handlers](#handlers)
    - [Dispatching](#dispatching)
+   - [Stream query helpers](#stream-query-helpers)
    - [Pipeline behaviors](#pipeline-behaviors)
    - [Result type](#result-type)
    - [Error type](#error-type)
@@ -129,6 +130,12 @@ public sealed record ListOrdersQuery : IQuery<IReadOnlyList<OrderDto>>;
 public sealed record OrderCreatedNotification(Guid OrderId) : INotification;
 ```
 
+**Stream queries** — read-only, lazy sequences that yield items over time; require exactly one handler. Use when data is too large to buffer, or when items should be consumed as they arrive.
+
+```csharp
+public sealed record GetOrderTicksQuery(int Count = 5) : IStreamQuery<OrderDto>;
+```
+
 ---
 
 ### Handlers
@@ -180,6 +187,64 @@ public sealed class SendOrderConfirmationEmail : INotificationHandler<OrderCreat
 
 The source generator emits a diagnostic if a command or query has no handler (`VIT001`, warning) or more than one handler (`VIT002`, error).
 
+#### Stream query handlers
+
+Stream queries have two handler patterns.
+
+**Pattern 1 — `StreamQueryHandler<TQuery, TResult>` base class (recommended for most cases)**
+
+Override the single `Stream` method and use `yield return` freely. The base class wraps it in a successful `Result` automatically.
+
+```csharp
+public sealed class GetOrderTicksHandler : StreamQueryHandler<GetOrderTicksQuery, OrderDto>
+{
+    protected override async IAsyncEnumerable<OrderDto> Stream(
+        GetOrderTicksQuery query,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        var count = Math.Clamp(query.Count, 1, 20);
+        for (var i = 1; i <= count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            yield return new OrderDto(Guid.NewGuid(), $"Customer {i}", "Widget", i, DateTimeOffset.UtcNow);
+        }
+    }
+}
+```
+
+Always decorate the `CancellationToken` parameter with `[EnumeratorCancellation]` so that callers using `.WithCancellation(ct)` can cancel mid-stream (the source generator emits `VIT003` if this is missing).
+
+**Pattern 2 — `IStreamQueryHandler<TQuery, TResult>` (when validation is required)**
+
+C# does not allow `yield return` in a method that returns `ValueTask<…>`, so split the handler into two methods: `Handle` for setup/validation and a private iterator for item production. Return a failure `Result` from `Handle` to signal errors before any item is produced.
+
+```csharp
+public sealed class GetOrderTicksHandler : IStreamQueryHandler<GetOrderTicksQuery, OrderDto>
+{
+    public ValueTask<Result<IAsyncEnumerable<OrderDto>>> Handle(
+        GetOrderTicksQuery query, CancellationToken ct = default)
+    {
+        if (query.Count <= 0)
+            return new(Error.Validation("Count must be positive."));
+
+        return new(Result<IAsyncEnumerable<OrderDto>>.Ok(Stream(query, ct)));
+    }
+
+    private async IAsyncEnumerable<OrderDto> Stream(
+        GetOrderTicksQuery query,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        for (var i = 1; i <= query.Count; i++)
+        {
+            ct.ThrowIfCancellationRequested();
+            await Task.Delay(TimeSpan.FromSeconds(1), ct);
+            yield return new OrderDto(Guid.NewGuid(), $"Customer {i}", "Widget", i, DateTimeOffset.UtcNow);
+        }
+    }
+}
+```
+
 ---
 
 ### Dispatching
@@ -210,6 +275,61 @@ app.MapPost("/orders/{id:guid}/shipped", async (Guid id, IPublisher publisher) =
     await publisher.Publish(new OrderCreatedNotification(id));
     return Results.NoContent();
 });
+```
+
+#### Stream queries
+
+Inject `ISender` and call `CreateStream<TResult>()`. The returned `Result` wraps the lazy `IAsyncEnumerable<TResult>` — check it for setup failures before consuming the stream.
+
+```csharp
+app.MapGet("/orders/stream/tick", async (int count, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.CreateStream(new GetOrderTicksQuery(count), ct);
+    return result.IsSuccess
+        ? Results.Ok(result.Value)      // IAsyncEnumerable<OrderDto> streamed as JSON array
+        : Results.Problem(result.Error.Message);
+});
+```
+
+---
+
+### Stream query helpers
+
+`StreamQueryExtensions` provides ergonomic helpers for working with the `Result<IAsyncEnumerable<T>>` returned by `CreateStream`.
+
+#### `CollectStream` — eager collection
+
+Opens the stream and awaits all items into a `List<T>`. Useful for tests and one-shot scenarios where the full result is needed at once. Captures both setup failures and mid-stream exceptions.
+
+```csharp
+Result<List<OrderDto>> result = await sender.CollectStream(new GetOrderTicksQuery(3), ct);
+```
+
+#### `MapStream` — lazy projection
+
+Projects each item with a synchronous mapper. Equivalent to LINQ `Select` — no buffering.
+
+```csharp
+Result<IAsyncEnumerable<string>> names = (await sender.CreateStream(query, ct)).MapStream(o => o.CustomerName);
+```
+
+#### `FilterStream` — lazy filtering
+
+Keeps only items satisfying a predicate. Equivalent to LINQ `Where` — no buffering.
+
+```csharp
+Result<IAsyncEnumerable<OrderDto>> large = (await sender.CreateStream(query, ct)).FilterStream(o => o.Quantity > 10);
+```
+
+#### `TakeStream` — lazy truncation
+
+Stops the stream after at most `count` items. Equivalent to LINQ `Take` — no buffering.
+
+```csharp
+Result<IAsyncEnumerable<OrderDto>> first3 = (await sender.CreateStream(query, ct)).TakeStream(3);
+```
+
+All three helpers pass failures through untouched — if `CreateStream` returned a failure `Result`, the helper returns the same failure without opening the stream.
 ```
 
 ---
@@ -253,12 +373,40 @@ Void commands (`ICommand`) participate in the same `IPipelineBehavior<TMessage, 
 | Void command | `ICommand` | `Unit` | Yes |
 | Query | `IQuery<TResult>` | e.g. `OrderDto` | Yes |
 | Notification | `INotification` | — | No — use `INotificationPipelineBehavior<TNotification>` |
+| Stream query | `IStreamQuery<TResult>` | — | No — use `IStreamPipelineBehavior<TMessage, TResult>` |
 
 Notifications dispatch to multiple handlers with a fan-out model and no `Result` wrapper, so they remain on their own interface.
 
 ```csharp
 builder.Services.AddSingleton(
     typeof(INotificationPipelineBehavior<>), typeof(NotificationLoggingBehavior<>));
+```
+
+#### Stream pipeline behaviors
+
+Stream queries have their own `IStreamPipelineBehavior<TMessage, TResult>` interface. Behaviors run before the stream is opened and can short-circuit with a failure `Result` before any item is produced.
+
+```csharp
+builder.Services.AddSingleton(
+    typeof(IStreamPipelineBehavior<,>), typeof(StreamAuthorizationBehavior<,>));
+```
+
+```csharp
+public sealed class StreamAuthorizationBehavior<TMessage, TResult>(ICurrentUser user)
+    : IStreamPipelineBehavior<TMessage, TResult>
+    where TMessage : IStreamQuery<TResult>
+{
+    public ValueTask<Result<IAsyncEnumerable<TResult>>> Handle(
+        TMessage message,
+        StreamQueryHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default)
+    {
+        if (!user.IsAuthenticated)
+            return new(Result<IAsyncEnumerable<TResult>>.Fail(Error.Unauthorized("Authentication required.")));
+
+        return next(message, ct);
+    }
+}
 ```
 
 ---
@@ -324,6 +472,14 @@ All factory methods accept an optional `code` override to replace the default co
 - **`VitreousDispatcher.g.cs`** — a concrete `ISender` / `IPublisher` implementation that dispatches via `if/else` chains on concrete types with no reflection.
 
 No attributes, no startup overhead. The generator runs during `dotnet build` and produces errors or warnings in your IDE when handler contracts are violated.
+
+#### Diagnostics
+
+| ID | Severity | Trigger |
+|---|---|---|
+| `VIT001` | Warning | A command, query, or stream query has no registered handler |
+| `VIT002` | Error | A command, query, or stream query has more than one handler |
+| `VIT003` | Warning | A `IAsyncEnumerable`-returning method inside a stream query handler is missing `[EnumeratorCancellation]` on its `CancellationToken` parameter — callers using `.WithCancellation(ct)` will not be able to cancel mid-stream |
 
 #### Multi-project solutions (DDD, Clean Architecture)
 
@@ -416,12 +572,12 @@ Navigate to `http://localhost:{port}/vitreous` (or your configured `PathPrefix`)
 
 ### What it captures
 
-Every command and query dispatch is traced automatically — no attributes or manual instrumentation required. Each trace includes:
+Every command, query, and stream query dispatch is traced automatically — no attributes or manual instrumentation required. Each trace includes:
 
 | Field | Description |
 |---|---|
 | Message type | Simple and fully-qualified type name |
-| Category | `Command`, `Query`, or `Notification` |
+| Category | `command`, `query`, `notification`, or `streamquery` |
 | Duration | Full wall-clock time including all pipeline behaviors |
 | Outcome | `Success` or `Failure`, with error code and message on failure |
 | Cache hit | Marked as `Cached` when `Vitreous.Caching` short-circuits the handler |
@@ -430,9 +586,19 @@ Every command and query dispatch is traced automatically — no attributes or ma
 | Logs | All `ILogger` calls emitted inside the handler during the dispatch |
 | Timestamp | Wall-clock time when the dispatch began |
 
+Stream query traces include additional fields:
+
+| Field | Description |
+|---|---|
+| Stream phase | `Opened` (stream is live and yielding items) or `Closed` (stream completed or failed) |
+| Item count | Number of items yielded before the stream closed |
+| Live duration | A ticking elapsed-time counter is shown in the UI while the stream is open |
+
 ### How it works
 
-`AddVitreousDevUI()` inserts `TracingBehavior<,>` as the **outermost** pipeline behavior regardless of what else is registered, so every dispatch — including cache hits from inner behaviors — is always captured. Log capture is implemented via a custom `ILoggerProvider` backed by an `AsyncLocal`, so log entries are attributed to the correct dispatch even under concurrent requests.
+`AddVitreousDevUI()` inserts `TracingBehavior<,>` (for commands and queries) and `StreamTracingBehavior<,>` (for stream queries) as the **outermost** pipeline behaviors regardless of what else is registered, so every dispatch — including cache hits from inner behaviors — is always captured. Log capture is implemented via a custom `ILoggerProvider` backed by an `AsyncLocal`, so log entries are attributed to the correct dispatch even under concurrent requests.
+
+Stream dispatch emits two SSE events: `Opened` (when the stream starts yielding) and `Closed` (when it completes or errors). The dashboard shows a live ticking duration counter while the stream is open and freezes it on `Closed`.
 
 The UI connects over Server-Sent Events (`/vitreous/events`). On page load it replays the full in-memory ring buffer, then streams new traces live. No WebSocket, no polling.
 

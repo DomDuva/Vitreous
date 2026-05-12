@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0-beta.3] - 2026-05-12
+
+### Added
+
+- **Stream queries** (`IStreamQuery<TResult>`) — new message kind for lazy, pull-based sequences of items produced over time. Dispatched via `ISender.CreateStream<TResult>()`, which returns a `Result<IAsyncEnumerable<TResult>>` so that setup failures (validation, authorization) can be signalled before any item is produced.
+
+- **`IStreamQueryHandler<TQuery, TResult>`** — handler interface for stream queries. The `Result` wrapper on the return type decouples setup from item production; once the stream is open, items flow as plain `TResult` values.
+
+- **`StreamQueryHandler<TQuery, TResult>`** — optional abstract base class that eliminates the mandatory two-method split imposed by C#'s `yield return` / `ValueTask` restrictions. Override the single `Stream()` method and use `yield return` freely; the base class wraps the sequence in a successful `Result` automatically. Override `Handle()` to add validation before item production.
+
+- **`IStreamPipelineBehavior<TMessage, TResult>`** and **`StreamQueryHandlerDelegate<TMessage, TResult>`** — stream-specific pipeline middleware. Behaviors run before the stream is opened and can short-circuit with a failure `Result` without producing any items. Register as open-generic services analogous to `IPipelineBehavior<,>`.
+
+- **`StreamQueryExtensions`** (`Vitreous` core) — ergonomic helpers for `ISender` and `Result<IAsyncEnumerable<T>>`:
+  - `CollectStream` — opens the stream and eagerly buffers all items into a `List<T>`; mid-stream exceptions are captured and returned as `Error.Internal`
+  - `MapStream` — lazy per-item projection (equivalent to LINQ `Select`); no buffering
+  - `FilterStream` — lazy predicate filtering (equivalent to LINQ `Where`); no buffering
+  - `TakeStream` — lazy truncation after `n` items (equivalent to LINQ `Take`); no buffering
+  - All helpers propagate a failure `Result` through untouched without opening the stream.
+
+- **Source generator — `VIT003`** (`Vitreous.SourceGeneration`) — new warning emitted when a private `IAsyncEnumerable`-returning iterator method inside a stream query handler is missing `[EnumeratorCancellation]` on its `CancellationToken` parameter. Callers using `.WithCancellation(ct)` cannot cancel mid-stream without this attribute. `VIT001` (no handler) and `VIT002` (duplicate handler) now also cover stream query types in addition to commands and queries.
+
+- **DevUI — live streaming traces** (`Vitreous.DevUI`) — `StreamTracingBehavior<,>` and `TracedAsyncEnumerable<T>` wrap every stream dispatch automatically. Two SSE events are emitted per dispatch: `Opened` (stream started) and `Closed` (stream completed or faulted). The dashboard merges these into a single row showing a pulsing **STREAMING** status badge with a live ticking duration counter while the stream is open; on close, the counter freezes and the final item count and serialized output are available in dedicated tabs.
+
+### Fixed
+
+- README NuGet badge labels were inconsistent across packages; corrected for clarity and uniformity.
+
+---
+
 ## [0.1.0-beta.2] - 2026-05-06
 
 ### Changed

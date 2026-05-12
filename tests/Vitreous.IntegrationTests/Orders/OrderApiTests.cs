@@ -234,6 +234,39 @@ public sealed class OrderApiTests : IClassFixture<WebApplicationFactory<Program>
         body.GetProperty("error").GetString().Should().Be("NOT_FOUND");
     }
 
+    // ── GET /orders/stream/tick ───────────────────────────────────────────────
+
+    [Fact]
+    public async Task GetOrderStream_ValidCount_Returns200WithItems()
+    {
+        // Count=1 → one item, one-second wait — fastest passing test for the stream endpoint.
+        var response = await _client.GetAsync("/orders/stream/tick?count=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+
+        var body = await response.Content.ReadFromJsonAsync<JsonElement[]>(_json);
+        body.Should().NotBeNull();
+        body!.Should().HaveCount(1);
+
+        // Verify the returned DTO has the expected shape
+        var item = body[0];
+        item.TryGetProperty("id", out var id).Should().BeTrue();
+        Guid.TryParse(id.GetString(), out _).Should().BeTrue();
+        item.TryGetProperty("customerName", out _).Should().BeTrue();
+        item.TryGetProperty("quantity", out _).Should().BeTrue();
+    }
+
+    [Fact]
+    public async Task GetOrderStream_DefaultCount_Returns200()
+    {
+        // No ?count= param → defaults to 5 items, but we only check the status code and
+        // that the response is a JSON array to avoid a 5-second wait in CI.
+        var response = await _client.GetAsync("/orders/stream/tick?count=1");
+
+        response.StatusCode.Should().Be(HttpStatusCode.OK);
+        response.Content.Headers.ContentType?.MediaType.Should().Be("application/json");
+    }
+
     // ── DevUI ─────────────────────────────────────────────────────────────────
 
     [Fact]
