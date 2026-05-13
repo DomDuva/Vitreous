@@ -36,6 +36,8 @@ MediatR is benchmarked at its default Transient handler lifetime. Switching to S
 | Send void command | 65.0 ns / 192 B | 59.0 ns / 64 B |
 | Publish notification | 88.8 ns / 288 B | 63.6 ns / **0 B** |
 | Send query (+ 1 behavior) | 106.5 ns / 448 B | 106.1 ns / 240 B |
+| Stream query (1 item) | 154.4 ns / 512 B | 99.3 ns / 184 B |
+| Stream query (10 items) | 376.4 ns / 512 B | 201.1 ns / 184 B |
 
 ### Startup (`BuildServiceProvider`)
 

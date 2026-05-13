@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using MediatR;
 
 namespace Vitreous.Benchmarks.MediatRHandlers;
@@ -30,6 +31,22 @@ public sealed class BenchNotificationHandler : INotificationHandler<BenchNotific
 {
     public Task Handle(BenchNotification notification, CancellationToken ct)
         => Task.CompletedTask;
+}
+
+// ── Stream query ──────────────────────────────────────────────────────────────
+
+public sealed record BenchStreamQuery(int Count) : IStreamRequest<int>;
+
+public sealed class BenchStreamQueryHandler : IStreamRequestHandler<BenchStreamQuery, int>
+{
+    public async IAsyncEnumerable<int> Handle(
+        BenchStreamQuery request,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        for (var i = 0; i < request.Count; i++)
+            yield return 42;
+        await Task.CompletedTask; // suppress CS1998; fast sync-completion path
+    }
 }
 
 // ── Pass-through pipeline behavior ───────────────────────────────────────────

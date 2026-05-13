@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Vitreous;
 using Vitreous.Abstractions;
 
@@ -31,6 +32,22 @@ public sealed class BenchNotificationHandler : INotificationHandler<BenchNotific
 {
     public ValueTask Handle(BenchNotification notification, CancellationToken ct = default)
         => ValueTask.CompletedTask;
+}
+
+// ── Stream query ──────────────────────────────────────────────────────────────
+
+public sealed record BenchStreamQuery(int Count) : IStreamQuery<int>;
+
+public sealed class BenchStreamQueryHandler : StreamQueryHandler<BenchStreamQuery, int>
+{
+    protected override async IAsyncEnumerable<int> Stream(
+        BenchStreamQuery query,
+        [EnumeratorCancellation] CancellationToken ct)
+    {
+        for (var i = 0; i < query.Count; i++)
+            yield return 42;
+        await Task.CompletedTask; // suppress CS1998; fast sync-completion path
+    }
 }
 
 // ── Pass-through pipeline behavior ───────────────────────────────────────────

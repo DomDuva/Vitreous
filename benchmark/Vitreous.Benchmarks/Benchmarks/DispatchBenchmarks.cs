@@ -78,12 +78,16 @@ public class DispatchBenchmarks
     private VPublisher _vitreousPublisher = null!;
 
     // Pre-allocated messages — excluded from the Allocated column
-    private static readonly MH.BenchQuery        MQ  = new();
-    private static readonly MH.BenchVoidCommand  MVC = new();
-    private static readonly MH.BenchNotification MN  = new();
-    private static readonly VH.BenchQuery        VQ  = new();
-    private static readonly VH.BenchVoidCommand  VVC = new();
-    private static readonly VH.BenchNotification VN  = new();
+    private static readonly MH.BenchQuery        MQ   = new();
+    private static readonly MH.BenchVoidCommand  MVC  = new();
+    private static readonly MH.BenchNotification MN   = new();
+    private static readonly MH.BenchStreamQuery  MSQ1  = new(1);
+    private static readonly MH.BenchStreamQuery  MSQ10 = new(10);
+    private static readonly VH.BenchQuery        VQ   = new();
+    private static readonly VH.BenchVoidCommand  VVC  = new();
+    private static readonly VH.BenchNotification VN   = new();
+    private static readonly VH.BenchStreamQuery  VSQ1  = new(1);
+    private static readonly VH.BenchStreamQuery  VSQ10 = new(10);
 
     [GlobalSetup]
     public void Setup()
@@ -187,6 +191,40 @@ public class DispatchBenchmarks
             case LibraryKind.MediatR:         await _mediatRPublisher.Publish(MN);         break;
             case LibraryKind.MediatRSingleton: await _mediatRSingletonPublisher.Publish(MN); break;
             default:                           await _vitreousPublisher.Publish(VN);        break;
+        }
+    }
+
+    // ── Stream query (1 item) ─────────────────────────────────────────────────
+
+    [Benchmark(Description = "Stream query (1 item)")]
+    public async Task Stream_1Item()
+    {
+        switch (Mediator)
+        {
+            case LibraryKind.MediatR:
+            case LibraryKind.MediatRSingleton:
+                await foreach (var _ in _mediatRSender.CreateStream(MSQ1)) { }
+                break;
+            default:
+                await foreach (var _ in (await _vitreous.CreateStream(VSQ1)).Value) { }
+                break;
+        }
+    }
+
+    // ── Stream query (10 items) ───────────────────────────────────────────────
+
+    [Benchmark(Description = "Stream query (10 items)")]
+    public async Task Stream_10Items()
+    {
+        switch (Mediator)
+        {
+            case LibraryKind.MediatR:
+            case LibraryKind.MediatRSingleton:
+                await foreach (var _ in _mediatRSender.CreateStream(MSQ10)) { }
+                break;
+            default:
+                await foreach (var _ in (await _vitreous.CreateStream(VSQ10)).Value) { }
+                break;
         }
     }
 }
