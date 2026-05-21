@@ -96,6 +96,7 @@ public static class ApplicationBuilderExtensions
         var store = app.ApplicationServices.GetRequiredService<TraceStore>();
         var sse   = app.ApplicationServices.GetRequiredService<SseConnectionManager>();
 
+        store.TraceAdded -= sse.Broadcast;
         store.TraceAdded += sse.Broadcast;
 
         // Register the custom log provider so handler ILogger calls are captured

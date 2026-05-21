@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.0] - 2026-05-21
+
+### Added
+
+- **Parallel notification fan-out** (`Vitreous`) — new `NotificationPublishStrategy` enum on `VitreousOptions`. Set `NotificationPublishStrategy = NotificationPublishStrategy.Parallel` to dispatch all `INotificationHandler<T>` instances concurrently via `Task.WhenAll`. Every handler runs to completion regardless of individual failures; all exceptions are collected and re-thrown as an `AggregateException`. Defaults to `Sequential` (existing fail-fast, in-order behaviour) — no breaking change. The source-generated `VitreousDispatcher` respects the option at runtime.
+
+### Fixed
+
+- **Notification handler registration** (`Vitreous`) — `INotificationHandler<T>` implementations were registered with `TryAddSingleton`, which silently ignored every handler after the first for a given notification type. Changed to `TryAddEnumerable`, ensuring all handlers are registered and invoked on `Publish`.
+- **Assembly scanner missing stream query handlers** (`Vitreous`) — `IStreamQueryHandler<,>` was absent from the handler interface check in `AddVitreousHandlers(params Assembly[])`, causing stream query handlers to be silently skipped during reflection-based discovery.
+- **`DefaultHandlerLifetime` not honoured** (`Vitreous`) — the `DefaultHandlerLifetime` option configured in `AddVitreous()` was not propagated to `AddVitreousHandlers(params Assembly[])`, so handlers were always registered as singletons regardless of the configured lifetime.
+- **`TracingBehavior` category detection** (`Vitreous.DevUI`) — void commands (`ICommand`) were not recognised as commands by the tracing behavior; only `ICommand<TResult>` was checked. Both interfaces are now detected and `HandlerType` resolves correctly for each.
+- **`Result<T>.Ok()` null guard** (`Vitreous`) — `Result<T>.Ok(null!)` previously succeeded silently, producing a success `Result` carrying a null value. It now throws `ArgumentNullException` immediately.
+- **`TraceAdded` event subscription leak** (`Vitreous.DevUI`) — the SSE broadcast delegate was appended to `TraceAdded` on every new SSE connection without first removing any prior subscription from the same client, causing duplicate events to be broadcast after reconnection. The handler is now unconditionally removed before being added.
+- **`TracingBehavior` ambient context not cleared on exception** (`Vitreous.DevUI`) — the `AsyncLocal` trace context was only cleared in the success path; an unhandled handler exception left it set for the remainder of the request. Clearing is now performed in a `finally` block.
+- **Cache key prefix separator missing** (`Vitreous.Caching`) — entries written with a non-empty `KeyPrefix` were stored under `{prefix}{key}` instead of `{prefix}:{key}`, causing keys with the same suffix to collide across different prefix namespaces. A colon separator is now always inserted between prefix and key.
+
+---
+
 ## [0.1.0-beta.3] - 2026-05-12
 
 ### Added

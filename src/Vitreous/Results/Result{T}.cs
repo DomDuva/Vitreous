@@ -63,7 +63,17 @@ public readonly struct Result<T>
     // -------------------------------------------------------------------------
 
     /// <summary>Creates a successful result wrapping <paramref name="value"/>.</summary>
-    public static Result<T> Ok(T value) => new(value);
+    /// <exception cref="ArgumentNullException">
+    /// Thrown when <paramref name="value"/> is <see langword="null"/>.
+    /// A successful Result cannot hold a null value.
+    /// </exception>
+    public static Result<T> Ok(T value)
+    {
+        if (value is null)
+            throw new ArgumentNullException(nameof(value),
+                "A successful Result cannot hold a null value.");
+        return new(value);
+    }
 
     /// <summary>Creates a failed result wrapping <paramref name="error"/>.</summary>
     public static Result<T> Fail(Error error) => new(error);

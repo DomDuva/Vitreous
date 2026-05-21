@@ -31,7 +31,9 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
         CancellationToken ct = default)
     {
         // Determine category
-        var category = message is ICommand<TResult> ? MessageCategory.Command : MessageCategory.Query;
+        var category = (message is ICommand || message is ICommand<TResult>)
+            ? MessageCategory.Command
+            : MessageCategory.Query;
 
         // Set up trace context so handler logs are captured
         var traceCtx = new TraceContext();
@@ -52,8 +54,6 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
         catch (Exception ex)
         {
             sw.Stop();
-            TraceLoggerProvider.Current = null;
-            VitreousContext.Current     = null;
 
             var errorTrace = BuildTrace(message, category, sw.Elapsed,
                 isSuccess:   false,
@@ -65,10 +65,13 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
             _store.Append(errorTrace);
             throw;
         }
+        finally
+        {
+            TraceLoggerProvider.Current = null;
+            VitreousContext.Current     = null;
+        }
 
         sw.Stop();
-        TraceLoggerProvider.Current = null;
-        VitreousContext.Current     = null;
 
         var trace = BuildTrace(
             message,
@@ -102,7 +105,15 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
             MessageType         = typeof(TMessage).Name,
             MessageTypeFullName = typeof(TMessage).FullName ?? typeof(TMessage).Name,
             Category            = category,
-            HandlerType         = $"ICommandHandler<{typeof(TMessage).Name}, {typeof(TResult).Name}>",
+            HandlerType         = category switch
+            {
+                MessageCategory.Command when typeof(TResult) == typeof(Unit)
+                    => $"ICommandHandler<{typeof(TMessage).Name}>",
+                MessageCategory.Command
+                    => $"ICommandHandler<{typeof(TMessage).Name}, {typeof(TResult).Name}>",
+                _
+                    => $"IQueryHandler<{typeof(TMessage).Name}, {typeof(TResult).Name}>"
+            },
             Duration            = duration,
             IsSuccess           = isSuccess,
             IsCacheHit          = isCacheHit,

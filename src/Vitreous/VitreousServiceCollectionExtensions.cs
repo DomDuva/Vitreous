@@ -26,14 +26,24 @@ public static partial class VitreousServiceCollectionExtensions
         var options = new VitreousOptions();
         configure?.Invoke(options);
 
-        // Register options for other packages (DevUI, etc.) to consume
+        // Register options for other packages (DevUI, source-generated dispatcher, etc.) to consume
         services.AddSingleton(options);
 
-        // Fallback sender/publisher — overridden by source-generated VitreousDispatcher when present
+        // Fallback sender — overridden by source-generated VitreousDispatcher when present
         services.TryAddSingleton<ISender, ReflectionSender>();
-        services.TryAddSingleton<IPublisher, SequentialPublisher>();
-        // Always register the concrete publisher so the generated dispatcher can resolve it
+
+        // Always register both concrete publishers so the source-generated dispatcher
+        // can resolve either by concrete type based on VitreousOptions at runtime.
         services.TryAddSingleton<SequentialPublisher>();
+        services.TryAddSingleton<ParallelPublisher>();
+
+        // Register IPublisher to the chosen strategy (used by the reflection-based path).
+        // The source-generated dispatcher overrides IPublisher with VitreousDispatcher,
+        // but still resolves the concrete publisher by type internally.
+        if (options.NotificationPublishStrategy == global::Vitreous.NotificationPublishStrategy.Parallel)
+            services.TryAddSingleton<IPublisher, ParallelPublisher>();
+        else
+            services.TryAddSingleton<IPublisher, SequentialPublisher>();
 
         return services;
     }
@@ -55,7 +65,7 @@ public static partial class VitreousServiceCollectionExtensions
     /// <param name="services">The service collection.</param>
     /// <param name="assemblies">
     /// One or more assemblies to scan for <c>ICommandHandler</c>, <c>IQueryHandler</c>,
-    /// and <c>INotificationHandler</c> implementations.
+    /// <c>IStreamQueryHandler</c>, and <c>INotificationHandler</c> implementations.
     /// </param>
     public static IServiceCollection AddVitreousHandlers(
         this IServiceCollection services,
@@ -78,16 +88,13 @@ public static partial class VitreousServiceCollectionExtensions
     {
         services.AddVitreous(configure);
 
+        var options = services
+            .LastOrDefault(sd => sd.ServiceType == typeof(VitreousOptions))
+            ?.ImplementationInstance as VitreousOptions;
+        var lifetime = options?.DefaultHandlerLifetime ?? ServiceLifetime.Singleton;
+
         if (assemblies.Length == 0)
             return services;
-
-        var handlerInterfaces = new[]
-        {
-            typeof(ICommandHandler<,>),
-            typeof(ICommandHandler<>),
-            typeof(IQueryHandler<,>),
-            typeof(INotificationHandler<>),
-        };
 
         foreach (var assembly in assemblies)
         {
@@ -106,9 +113,25 @@ public static partial class VitreousServiceCollectionExtensions
                     if (definition == typeof(ICommandHandler<,>)     ||
                         definition == typeof(ICommandHandler<>)       ||
                         definition == typeof(IQueryHandler<,>)        ||
+                        definition == typeof(IStreamQueryHandler<,>)   ||
                         definition == typeof(INotificationHandler<>))
                     {
-                        services.TryAddSingleton(iface, type);
+                        if (definition == typeof(INotificationHandler<>))
+                        {
+                            services.TryAddEnumerable(new ServiceDescriptor(iface, type, lifetime));
+                        }
+                        else if (lifetime == ServiceLifetime.Scoped)
+                        {
+                            services.TryAddScoped(iface, type);
+                        }
+                        else if (lifetime == ServiceLifetime.Transient)
+                        {
+                            services.TryAddTransient(iface, type);
+                        }
+                        else
+                        {
+                            services.TryAddSingleton(iface, type);
+                        }
                     }
                 }
             }

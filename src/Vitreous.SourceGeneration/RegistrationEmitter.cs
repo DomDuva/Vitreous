@@ -289,20 +289,26 @@ internal static class RegistrationEmitter
 
     private static void EmitPublish(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
     {
-        var notifications = handlers
-            .Where(h => h.Kind == HandlerKind.Notification)
-            .GroupBy(h => h.MessageFullName)
-            .ToList();
-
         sb.AppendLine("    /// <inheritdoc/>");
         sb.AppendLine("    public ValueTask Publish<TNotification>(");
         sb.AppendLine("        TNotification notification,");
         sb.AppendLine("        CancellationToken ct = default)");
         sb.AppendLine("        where TNotification : INotification");
         sb.AppendLine("    {");
-        sb.AppendLine("        // Delegate to the strongly-typed overload via the sequential publisher");
-        sb.AppendLine("        var publisher = _services.GetRequiredService<SequentialPublisher>();");
-        sb.AppendLine("        return publisher.Publish(notification, ct);");
+        sb.AppendLine("        // Delegate to the concrete publisher chosen by VitreousOptions.");
+        sb.AppendLine("        // IPublisher is registered as VitreousDispatcher itself, so we");
+        sb.AppendLine("        // resolve the concrete publisher by type to avoid circular calls.");
+        sb.AppendLine("        var opts = _services.GetRequiredService<VitreousOptions>();");
+        sb.AppendLine("        if (opts.NotificationPublishStrategy == NotificationPublishStrategy.Parallel)");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var publisher = _services.GetRequiredService<ParallelPublisher>();");
+        sb.AppendLine("            return publisher.Publish(notification, ct);");
+        sb.AppendLine("        }");
+        sb.AppendLine("        else");
+        sb.AppendLine("        {");
+        sb.AppendLine("            var publisher = _services.GetRequiredService<SequentialPublisher>();");
+        sb.AppendLine("            return publisher.Publish(notification, ct);");
+        sb.AppendLine("        }");
         sb.AppendLine("    }");
         sb.AppendLine();
     }

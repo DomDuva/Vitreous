@@ -98,7 +98,8 @@ Both overloads accept an optional `Action<VitreousOptions>` callback:
 ```csharp
 builder.Services.AddVitreousHandlers(options =>
 {
-    options.DefaultHandlerLifetime = ServiceLifetime.Singleton; // default
+    options.DefaultHandlerLifetime      = ServiceLifetime.Singleton;             // default
+    options.NotificationPublishStrategy = NotificationPublishStrategy.Sequential; // default; set to Parallel for concurrent fan-out
 });
 ```
 
@@ -131,6 +132,8 @@ public sealed record ListOrdersQuery : IQuery<IReadOnlyList<OrderDto>>;
 ```csharp
 public sealed record OrderCreatedNotification(Guid OrderId) : INotification;
 ```
+
+By default all handlers are invoked sequentially (fail-fast on first exception). Set `NotificationPublishStrategy = NotificationPublishStrategy.Parallel` in `VitreousOptions` to fan-out to all handlers concurrently via `Task.WhenAll` — every handler runs to completion regardless of individual failures, and all exceptions are collected into an `AggregateException`.
 
 **Stream queries** — read-only, lazy sequences that yield items over time; require exactly one handler. Use when data is too large to buffer, or when items should be consumed as they arrive.
 
