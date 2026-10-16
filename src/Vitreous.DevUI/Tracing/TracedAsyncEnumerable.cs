@@ -18,6 +18,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
     private readonly string? _correlationId;
     private readonly TraceContext _traceCtx;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly int _maxCapturedItems;
 
     internal TracedAsyncEnumerable(
         IAsyncEnumerable<T> inner,
@@ -27,7 +28,8 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
         string messageTypeFullName,
         string? correlationId,
         TraceContext traceCtx,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        int maxCapturedItems)
     {
         _inner               = inner;
         _store               = store;
@@ -37,6 +39,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
         _correlationId       = correlationId;
         _traceCtx            = traceCtx;
         _jsonOptions         = jsonOptions;
+        _maxCapturedItems    = maxCapturedItems;
     }
 
     public IAsyncEnumerator<T> GetAsyncEnumerator(CancellationToken cancellationToken = default)
@@ -48,7 +51,8 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
             _messageTypeFullName,
             _correlationId,
             _traceCtx,
-            _jsonOptions);
+            _jsonOptions,
+            _maxCapturedItems);
 }
 
 /// <summary>
@@ -72,8 +76,10 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
     private readonly Stopwatch _sw = Stopwatch.StartNew();
     private readonly TraceContext _traceCtx;
     private readonly JsonSerializerOptions _jsonOptions;
+    private readonly int _maxCapturedItems;
     private readonly List<string> _capturedItems = new();
     private int _itemCount;
+    private bool _faulted;
 
     internal TracedAsyncEnumerator(
         IAsyncEnumerator<T> inner,
@@ -83,7 +89,8 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
         string messageTypeFullName,
         string? correlationId,
         TraceContext traceCtx,
-        JsonSerializerOptions jsonOptions)
+        JsonSerializerOptions jsonOptions,
+        int maxCapturedItems)
     {
         _inner               = inner;
         _store               = store;
@@ -93,6 +100,7 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
         _correlationId       = correlationId;
         _traceCtx            = traceCtx;
         _jsonOptions         = jsonOptions;
+        _maxCapturedItems    = maxCapturedItems;
     }
 
     public T Current => _inner.Current;
@@ -108,10 +116,20 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
             if (hasNext)
             {
                 _itemCount++;
-                try { _capturedItems.Add(JsonSerializer.Serialize(_inner.Current, _jsonOptions)); }
-                catch { /* serialization failure is non-fatal */ }
+                if (_capturedItems.Count < _maxCapturedItems)
+                {
+                    try { _capturedItems.Add(JsonSerializer.Serialize(_inner.Current, _jsonOptions)); }
+                    catch { /* serialization failure is non-fatal */ }
+                }
             }
             return hasNext;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _faulted = true;
+            _traceCtx.AddLog(Microsoft.Extensions.Logging.LogLevel.Error,
+                $"Stream faulted: {ex.GetType().Name}: {ex.Message}");
+            throw;
         }
         finally
         {
@@ -127,8 +145,10 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
         string? serializedOutput = null;
         if (_capturedItems.Count > 0)
         {
-            try { serializedOutput = $"[{string.Join(",", _capturedItems)}]"; }
-            catch { /* ignore */ }
+            var truncated = _itemCount > _capturedItems.Count
+                ? $",\"… {_itemCount - _capturedItems.Count} more item(s) not captured\""
+                : string.Empty;
+            serializedOutput = $"[{string.Join(",", _capturedItems)}{truncated}]";
         }
 
         _store.Append(new ExecutionTrace
@@ -138,7 +158,7 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
             Category            = MessageCategory.StreamQuery,
             HandlerType         = string.Empty,
             Duration            = _sw.Elapsed,
-            IsSuccess           = true,
+            IsSuccess           = !_faulted,
             StreamId            = _streamId,
             StreamPhase         = StreamPhase.Closed,
             ItemCount           = _itemCount,

@@ -1,0 +1,44 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build & Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # MinVer needs tags to compute a version
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: |
+            8.x
+            9.x
+            10.x
+
+      - name: Restore
+        run: dotnet restore
+
+      - name: Build (Release)
+        run: dotnet build --configuration Release --no-restore
+
+      - name: Test
+        run: dotnet test --configuration Release --no-build --verbosity minimal
+
+      # Packs every src/ project and verifies the source generator is laid out as an
+      # analyzer (analyzers/dotnet/cs) — if it ends up under lib/ the generator never runs.
+      - name: Pack & verify analyzer layout
+        run: |
+          for proj in src/*/*.csproj; do
+            dotnet pack "$proj" --configuration Release --no-build --output ./artifacts
+          done
+          unzip -l ./artifacts/Vitreous.SourceGeneration.*.nupkg | grep -q "analyzers/dotnet/cs/Vitreous.SourceGeneration.dll" \
+            || { echo "::error::Vitreous.SourceGeneration.dll is not packed under analyzers/dotnet/cs"; exit 1; }

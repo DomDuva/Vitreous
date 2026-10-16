@@ -123,9 +123,7 @@ internal sealed class RedisVitreousCache : IVitreousCache
             "Vitreous.Caching.Redis: removed {Count} entries for tag '{Tag}'", removed, tag);
     }
 
-    private string PrefixKey(string key) =>
-        string.IsNullOrEmpty(_options.KeyPrefix) ? key : _options.KeyPrefix + key;
+    private string PrefixKey(string key) => CacheKeys.Combine(_options.KeyPrefix, key);
 
-    private string PrefixTag(string tag) =>
-        string.IsNullOrEmpty(_options.TagPrefix) ? tag : _options.TagPrefix + tag;
+    private string PrefixTag(string tag) => CacheKeys.Combine(_options.TagPrefix, tag);
 }

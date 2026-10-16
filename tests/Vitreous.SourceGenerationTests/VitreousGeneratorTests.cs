@@ -282,4 +282,178 @@ public class VitreousGeneratorTests
 
         diagnostics.Where(static d => d.Id == "VIT003").Should().BeEmpty();
     }
+
+    // -------------------------------------------------------------------------
+    // Records, structs, nested types
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void VIT001_RecordCommandWithNoHandler_EmitsWarning()
+    {
+        // Messages are documented as records — VIT001 must fire for them too.
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public sealed record OrphanRecordCommand(int Value) : ICommand<int>;
+            """;
+
+        var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
+
+        diagnostics.Where(static d => d.Id == "VIT001").Should().ContainSingle()
+            .Which.GetMessage().Should().Contain("OrphanRecordCommand");
+    }
+
+    [Fact]
+    public void VIT001_StructQueryWithNoHandler_EmitsWarning()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public readonly record struct OrphanStructQuery(int Id) : IQuery<string>;
+            """;
+
+        var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
+
+        diagnostics.Where(static d => d.Id == "VIT001").Should().ContainSingle();
+    }
+
+    [Fact]
+    public void RecordHandler_IsDiscoveredAndRegistered()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public sealed record MyQuery : IQuery<int>;
+            public sealed record MyQueryHandler : IQueryHandler<MyQuery, int>
+            {
+                public System.Threading.Tasks.ValueTask<Vitreous.Result<int>> Handle(
+                    MyQuery query, System.Threading.CancellationToken ct = default) => default;
+            }
+            """;
+
+        var (diagnostics, sources) = GeneratorTestHelper.RunGenerator(source);
+
+        diagnostics.Where(static d => d.Id is "VIT001" or "VIT002").Should().BeEmpty();
+        sources.First(static s => s.HintName == "VitreousServiceCollectionExtensions.g.cs")
+            .SourceText.ToString().Should().Contain("TestProject.MyQueryHandler");
+    }
+
+    [Fact]
+    public void NestedMessagesWithSameSimpleName_GenerateCompilableDispatcher()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public static class CreateOrder
+            {
+                public sealed record Command(int Id) : ICommand<int>;
+                public sealed class Handler : ICommandHandler<Command, int>
+                {
+                    public System.Threading.Tasks.ValueTask<Vitreous.Result<int>> Handle(
+                        Command c, System.Threading.CancellationToken ct = default) => default;
+                }
+            }
+
+            public static class DeleteOrder
+            {
+                public sealed record Command(int Id) : ICommand<int>;
+                public sealed class Handler : ICommandHandler<Command, int>
+                {
+                    public System.Threading.Tasks.ValueTask<Vitreous.Result<int>> Handle(
+                        Command c, System.Threading.CancellationToken ct = default) => default;
+                }
+            }
+            """;
+
+        var errors = GeneratorTestHelper.RunGeneratorAndCompile(source);
+
+        errors.Should().BeEmpty(because: string.Join("\n", errors.Select(e => e.ToString())));
+    }
+
+    [Fact]
+    public void PrivateNestedHandler_IsSkipped_AndGeneratedCodeCompiles()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public sealed record Cmd : ICommand<int>;
+
+            public static class Feature
+            {
+                private sealed class HiddenHandler : ICommandHandler<Cmd, int>
+                {
+                    public System.Threading.Tasks.ValueTask<Vitreous.Result<int>> Handle(
+                        Cmd c, System.Threading.CancellationToken ct = default) => default;
+                }
+            }
+            """;
+
+        var errors = GeneratorTestHelper.RunGeneratorAndCompile(source);
+        var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
+
+        errors.Should().BeEmpty(because: string.Join("\n", errors.Select(e => e.ToString())));
+        diagnostics.Where(static d => d.Id == "VIT001").Should().ContainSingle("the private handler cannot be registered");
+    }
+
+    // -------------------------------------------------------------------------
+    // Registration semantics
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void MultipleNotificationHandlers_AreRegisteredWithTryAddEnumerable()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public sealed record Evt : INotification;
+            public sealed class A : INotificationHandler<Evt>
+            {
+                public System.Threading.Tasks.ValueTask Handle(Evt n, System.Threading.CancellationToken ct = default) => default;
+            }
+            public sealed class B : INotificationHandler<Evt>
+            {
+                public System.Threading.Tasks.ValueTask Handle(Evt n, System.Threading.CancellationToken ct = default) => default;
+            }
+            """;
+
+        var (_, sources) = GeneratorTestHelper.RunGenerator(source);
+        var registrations = sources.First(static s => s.HintName == "VitreousServiceCollectionExtensions.g.cs")
+            .SourceText.ToString();
+
+        registrations.Should().Contain("TryAddEnumerable(new ServiceDescriptor(typeof(INotificationHandler<TestProject.Evt>), typeof(TestProject.A), lifetime))");
+        registrations.Should().Contain("TryAddEnumerable(new ServiceDescriptor(typeof(INotificationHandler<TestProject.Evt>), typeof(TestProject.B), lifetime))");
+        registrations.Should().NotContain("TryAddSingleton<INotificationHandler");
+    }
+
+    [Fact]
+    public void GeneratedRegistration_HonoursConfiguredHandlerLifetime()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            namespace TestProject;
+
+            public sealed record Q : IQuery<int>;
+            public sealed class QH : IQueryHandler<Q, int>
+            {
+                public System.Threading.Tasks.ValueTask<Vitreous.Result<int>> Handle(
+                    Q q, System.Threading.CancellationToken ct = default) => default;
+            }
+            """;
+
+        var (_, sources) = GeneratorTestHelper.RunGenerator(source);
+        var registrations = sources.First(static s => s.HintName == "VitreousServiceCollectionExtensions.g.cs")
+            .SourceText.ToString();
+
+        registrations.Should().Contain("var lifetime = options.DefaultHandlerLifetime;");
+        registrations.Should().Contain("typeof(TestProject.QH), lifetime)");
+        registrations.Should().Contain("var dispatcherLifetime = lifetime == ServiceLifetime.Scoped");
+        // The generated class must not collide with the core class name (CS0436).
+        registrations.Should().NotContain("partial class VitreousServiceCollectionExtensions");
+    }
 }

@@ -31,10 +31,17 @@ public static class VitreousRedisCachingServiceCollectionExtensions
         services.AddSingleton(options);
 
         // Register the Redis multiplexer only if not already in DI
-        if (options.ConnectionString is not null)
+        if (!string.IsNullOrWhiteSpace(options.ConnectionString))
         {
             services.TryAddSingleton<IConnectionMultiplexer>(
                 _ => ConnectionMultiplexer.Connect(options.ConnectionString));
+        }
+        else if (!services.Any(sd => sd.ServiceType == typeof(IConnectionMultiplexer)))
+        {
+            throw new InvalidOperationException(
+                "AddVitreousRedisCaching() needs a Redis connection. Either set " +
+                "options.ConnectionString (e.g. \"localhost:6379\") or register an " +
+                "IConnectionMultiplexer in the service collection before calling it.");
         }
 
         // Register the VitreousCachingOptions with defaults (behaviours need it)

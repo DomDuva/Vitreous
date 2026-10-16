@@ -17,11 +17,16 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
     where TMessage : IStreamQuery<TResult>
 {
     private readonly TraceStore _store;
+    private readonly int _maxCapturedItems;
     private readonly JsonSerializerOptions _jsonOptions;
 
-    public StreamTracingBehavior(TraceStore store, JsonSerializerOptions? jsonOptions = null)
+    public StreamTracingBehavior(
+        TraceStore store,
+        VitreousDevUIOptions? options = null,
+        JsonSerializerOptions? jsonOptions = null)
     {
         _store = store;
+        _maxCapturedItems = options?.MaxCapturedStreamItems ?? 100;
         _jsonOptions = jsonOptions ?? new JsonSerializerOptions
         {
             WriteIndented = false,
@@ -94,7 +99,8 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
             typeof(TMessage).FullName ?? typeof(TMessage).Name,
             System.Diagnostics.Activity.Current?.TraceId.ToString(),
             traceCtx,
-            _jsonOptions);
+            _jsonOptions,
+            _maxCapturedItems);
 
         return Result<IAsyncEnumerable<TResult>>.Ok(tracedStream);
     }

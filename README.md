@@ -22,6 +22,62 @@ A high-performance, source-generated mediator for .NET — a modern alternative 
 
 ---
 
+## Quick start
+
+Three steps from an empty project to a working dispatch.
+
+**1. Install** (in the project that contains `Program.cs`):
+
+```
+dotnet add package Vitreous
+dotnet add package Vitreous.SourceGeneration
+```
+
+**2. Define a message and its handler** anywhere in your project:
+
+```csharp
+using Vitreous;
+using Vitreous.Abstractions;
+
+public sealed record CreateOrderCommand(string Customer) : ICommand<Guid>;
+
+public sealed class CreateOrderHandler : ICommandHandler<CreateOrderCommand, Guid>
+{
+    public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Customer))
+            return new(Error.Validation("Customer is required."));
+
+        return new(Guid.NewGuid()); // T converts to Result<T> implicitly
+    }
+}
+```
+
+**3. Register and dispatch:**
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddVitreousHandlers(); // generated at build time — finds every handler
+
+var app = builder.Build();
+
+app.MapPost("/orders", async (CreateOrderCommand cmd, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.Send(cmd, ct);
+    return result.Match(
+        id  => Results.Created($"/orders/{id}", new { id }),
+        err => Results.BadRequest(new { err.Code, err.Message }));
+});
+
+app.Run();
+```
+
+That's it. No attributes, no assembly scanning, and the compiler warns you (`VIT001`) if a command or query has no handler.
+
+> **No source generator?** Call `AddVitreousHandlers(typeof(Program).Assembly)` instead and handlers are discovered by reflection at startup. See [Registration methods](#registration-methods).
+
+---
+
 ## Performance
 
 Benchmarks run on .NET 9.0.14, AMD Ryzen 7 7800X3D. Source: [`benchmark/Vitreous.Benchmarks`](benchmark/Vitreous.Benchmarks).
@@ -52,6 +108,7 @@ Vitreous is **~31× faster** to start and allocates **~14× less** — because `
 
 ## Table of contents
 
+0. [Quick start](#quick-start)
 1. [Core package](#1-core-package)
    - [Installation](#installation)
    - [Messages](#messages)
@@ -67,6 +124,7 @@ Vitreous is **~31× faster** to start and allocates **~14× less** — because `
    - [IDistributedCache backend](#idistributedcache-backend)
    - [Redis backend](#redis-backend)
 4. [Putting it all together](#4-putting-it-all-together)
+5. [Troubleshooting](#5-troubleshooting)
 
 ---
 
@@ -87,11 +145,13 @@ builder.Services.AddVitreousHandlers();
 
 `AddVitreousHandlers()` is generated at build time by `Vitreous.SourceGeneration`. It discovers every handler in your project at compile time, registers them, and wires up a reflection-free dispatcher. No scanning, no startup overhead.
 
-If you prefer to skip the source generator, call the reflection-based fallback instead:
+If you prefer to skip the source generator, pass the assemblies that contain your handlers and they are discovered by reflection at startup:
 
 ```csharp
-builder.Services.AddVitreous(); // registers ReflectionSender; handlers must be registered manually
+builder.Services.AddVitreousHandlers(typeof(Program).Assembly);
 ```
+
+Calling `AddVitreousHandlers()` with no arguments and without the source generator installed throws at startup with a message explaining both options — it never silently registers nothing.
 
 Both overloads accept an optional `Action<VitreousOptions>` callback:
 
@@ -102,6 +162,8 @@ builder.Services.AddVitreousHandlers(options =>
     options.NotificationPublishStrategy = NotificationPublishStrategy.Sequential; // default; set to Parallel for concurrent fan-out
 });
 ```
+
+`DefaultHandlerLifetime` applies to every discovered handler. Use `Scoped` when handlers depend on scoped services such as a `DbContext` — `ISender` and `IPublisher` then become scoped too, so resolve them from the request scope (which minimal APIs and controllers do automatically).
 
 ---
 
@@ -335,7 +397,6 @@ Result<IAsyncEnumerable<OrderDto>> first3 = (await sender.CreateStream(query, ct
 ```
 
 All three helpers pass failures through untouched — if `CreateStream` returned a failure `Result`, the helper returns the same failure without opening the stream.
-```
 
 ---
 
@@ -478,6 +539,8 @@ All factory methods accept an optional `code` override to replace the default co
 
 No attributes, no startup overhead. The generator runs during `dotnet build` and produces errors or warnings in your IDE when handler contracts are violated.
 
+Handlers and messages may be classes, records, or record structs, and may be nested inside other public/internal types. Private nested handlers cannot be registered and are reported as `VIT001`.
+
 #### Diagnostics
 
 | ID | Severity | Trigger |
@@ -563,8 +626,9 @@ dotnet add package Vitreous.DevUI
 if (builder.Environment.IsDevelopment())
     builder.Services.AddVitreousDevUI(options =>
     {
-        options.PathPrefix          = "/vitreous"; // URL where the UI is mounted
-        options.TraceBufferCapacity = 500;          // number of traces kept in memory
+        options.PathPrefix             = "/vitreous"; // URL where the UI is mounted
+        options.TraceBufferCapacity    = 500;         // number of traces kept in memory
+        options.MaxCapturedStreamItems = 100;         // stream items serialized into the Output tab
     });
 
 var app = builder.Build();
@@ -577,7 +641,7 @@ Navigate to `http://localhost:{port}/vitreous` (or your configured `PathPrefix`)
 
 ### What it captures
 
-Every command, query, and stream query dispatch is traced automatically — no attributes or manual instrumentation required. Each trace includes:
+Every command, query, notification, and stream query dispatch is traced automatically — no attributes or manual instrumentation required. Each trace includes:
 
 | Field | Description |
 |---|---|
@@ -601,7 +665,7 @@ Stream query traces include additional fields:
 
 ### How it works
 
-`AddVitreousDevUI()` inserts `TracingBehavior<,>` (for commands and queries) and `StreamTracingBehavior<,>` (for stream queries) as the **outermost** pipeline behaviors regardless of what else is registered, so every dispatch — including cache hits from inner behaviors — is always captured. Log capture is implemented via a custom `ILoggerProvider` backed by an `AsyncLocal`, so log entries are attributed to the correct dispatch even under concurrent requests.
+`AddVitreousDevUI()` inserts `TracingBehavior<,>` (for commands and queries), `NotificationTracingBehavior<>` (for notifications) and `StreamTracingBehavior<,>` (for stream queries) as the **outermost** pipeline behaviors regardless of what else is registered, so every dispatch — including cache hits from inner behaviors — is always captured. Log capture is implemented via a custom `ILoggerProvider` backed by an `AsyncLocal`, so log entries are attributed to the correct dispatch even under concurrent requests.
 
 Stream dispatch emits two SSE events: `Opened` (when the stream starts yielding) and `Closed` (when it completes or errors). The dashboard shows a live ticking duration counter while the stream is open and freezes it on `Closed`.
 
@@ -638,6 +702,8 @@ builder.Services.AddVitreousCaching(options =>
     options.KeyPrefix = "vitreous:"; // default — prepended to every cache key
 });
 ```
+
+Keys are stored as `{KeyPrefix}:{CacheKey}` with exactly one `:` separator (a prefix that already ends in `:` is not doubled), identically for both backends.
 
 #### Making a query cacheable
 
@@ -773,6 +839,65 @@ app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender) =>
 
 app.Run();
 ```
+
+### Mapping errors to HTTP status codes
+
+`Error.Code` is a plain string, so a single extension method keeps endpoint code free of status-code logic:
+
+```csharp
+public static class ResultHttpExtensions
+{
+    public static IResult ToHttpResult<T>(this Result<T> result, Func<T, IResult>? onSuccess = null) =>
+        result.Match(
+            value => onSuccess?.Invoke(value) ?? Results.Ok(value),
+            error => Results.Problem(
+                title:      error.Code,
+                detail:     error.Message,
+                statusCode: error.Code switch
+                {
+                    "NOT_FOUND"    => StatusCodes.Status404NotFound,
+                    "VALIDATION"   => StatusCodes.Status400BadRequest,
+                    "UNAUTHORIZED" => StatusCodes.Status401Unauthorized,
+                    "CONFLICT"     => StatusCodes.Status409Conflict,
+                    _              => StatusCodes.Status500InternalServerError
+                },
+                extensions: error.Extensions));
+}
+
+app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
+    (await sender.Send(new GetOrderQuery(id), ct)).ToHttpResult());
+```
+
+---
+
+## 5. Troubleshooting
+
+**`No handler registered for command 'X'` at runtime**
+The dispatcher could not find a handler. Check that:
+- `Vitreous.SourceGeneration` is installed on the *entry-point* project (the one calling `AddVitreousHandlers()`), **or** you passed the handler assemblies explicitly: `AddVitreousHandlers(typeof(X).Assembly)`.
+- The handler is a non-abstract, non-generic `public` or `internal` class.
+- Rebuild the project — the generated code only updates on build.
+
+**`AddVitreousHandlers() was called without any assemblies to scan`**
+The source-generated overload is not present, so the call fell through to the reflection overload. Install `Vitreous.SourceGeneration` or pass assemblies.
+
+**`VIT001: No handler is registered for 'X'`**
+A command, query, or stream query has no handler in the compilation or any referenced project. Add one, or ignore the warning if the message is only dispatched by another application.
+
+**`VIT002: Multiple handlers found for 'X'`**
+Commands and queries must have exactly one handler. If you need fan-out, use a notification instead.
+
+**`The type 'VitreousDispatcher' exists in both ...`**
+`Vitreous.SourceGeneration` is installed on more than one project in the dependency graph. Keep it only on the entry-point project; class-library projects need just `Vitreous`.
+
+**Scoped services (`DbContext`) throw `Cannot resolve scoped service from root provider`**
+Set `options.DefaultHandlerLifetime = ServiceLifetime.Scoped` in `AddVitreousHandlers(...)`. The sender and publisher follow the handler lifetime automatically.
+
+**Only one notification handler runs**
+Fixed in the version after 0.1.0 — earlier generated code registered notification handlers with `TryAddSingleton`, which kept only the first. Update both `Vitreous` and `Vitreous.SourceGeneration`.
+
+**Nothing shows in the DevUI**
+`UseVitreousDevUI()` must run in the environment you are testing (the samples gate it on `IsDevelopment()`), and `AddVitreousDevUI()` must be called before `builder.Build()`. Open `/vitreous` in a browser and trigger a request.
 
 ---
 

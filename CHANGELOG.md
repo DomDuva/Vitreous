@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.1.1] - 2026-10-16
+
+### Fixed
+
+- **Source generator never ran when installed from NuGet** (`Vitreous.SourceGeneration`) — the generator DLL was packed under `lib/netstandard2.0/` instead of `analyzers/dotnet/cs/`, so the compiler never loaded it and `AddVitreousHandlers()` silently resolved to the reflection overload with no assemblies, registering nothing. The package is now a proper analyzer package (`DevelopmentDependency`, no `lib/` output). CI verifies the layout on every build.
+- **Generated registration dropped notification handlers** (`Vitreous.SourceGeneration`) — notification handlers were emitted with `TryAddSingleton`, which keeps only the first handler per notification type. They are now registered with `TryAddEnumerable`, matching the reflection path.
+- **Generated registration ignored `DefaultHandlerLifetime`** (`Vitreous.SourceGeneration`) — handlers were always singletons. The configured lifetime is now honoured, and `ISender`/`IPublisher`/`VitreousDispatcher` become scoped when handlers are scoped so scoped dependencies (e.g. `DbContext`) resolve correctly.
+- **Generated code required `ImplicitUsings`** (`Vitreous.SourceGeneration`) — projects with implicit usings disabled failed to compile the generated files. Explicit `using` directives are now emitted.
+- **Generated code could collide on nested type names** (`Vitreous.SourceGeneration`) — two nested message types sharing a simple name (e.g. `CreateOrder.Command` / `DeleteOrder.Command`) produced duplicate pattern variables. Variables are now index-based.
+- **`VIT001` never fired for `record` messages** (`Vitreous.SourceGeneration`) — only `class` declarations were inspected, yet the documented message style is `record`. Classes, records and (record) structs are now scanned; record handlers are also discovered. Private nested handlers (which cannot be referenced from generated code) are skipped and reported as `VIT001` instead of breaking the build. Nested types in referenced assemblies are now traversed.
+- **Generated class name clashed with the core class** (`Vitreous.SourceGeneration`) — the emitted `partial class VitreousServiceCollectionExtensions` shares its fully-qualified name with the core type and triggers CS0436 whenever either is referenced by name. The generated class is now `VitreousGeneratedServiceCollectionExtensions`; the `AddVitreousHandlers()` call site is unchanged.
+- **Reflection sender resolved behaviors by interface, not concrete type** (`Vitreous`) — `IPipelineBehavior<ICommand<T>, T>` was requested instead of `IPipelineBehavior<MyCommand, T>`, so behaviors closed over a specific message type never ran and open-generic behaviors saw `ICommand`1` as the message name (breaking DevUI labels). `ReflectionSender` now builds and caches a strongly-typed dispatch delegate per message type; reflection is used once per type, not per call.
+- **`AddVitreousHandlers()` with no assemblies registered nothing** (`Vitreous`) — it now throws an `InvalidOperationException` explaining that either `Vitreous.SourceGeneration` must be installed or assemblies must be passed. Assembly scanning also skips open generic types and tolerates `ReflectionTypeLoadException`.
+- **Notifications were never traced** (`Vitreous.DevUI`) — `NotificationTracingBehavior<>` existed but was not registered by `AddVitreousDevUI()`. It is now inserted as the outermost notification behavior.
+- **Handler log order was scrambled** (`Vitreous.DevUI`) — `TraceContext` used a `ConcurrentBag`, which has no ordering guarantee. Logs are now kept in insertion order.
+- **Stream traces captured every item in memory** (`Vitreous.DevUI`) — long or infinite streams grew without bound. Capture is now limited by the new `VitreousDevUIOptions.MaxCapturedStreamItems` (default 100); the item count is still exact and the output notes how many items were not captured. A stream that faults mid-iteration is now reported as a failed `Closed` trace with the exception logged.
+- **Inconsistent cache key format** (`Vitreous.Caching`, `Vitreous.Caching.Redis`) — the default `"vitreous:"` prefix produced `vitreous::key` with the `IDistributedCache` backend and `vitreous:key` with Redis. Both now use `CacheKeys.Combine`, which guarantees exactly one separator.
+- **Redis registration failed late with an opaque DI error** (`Vitreous.Caching.Redis`) — `AddVitreousRedisCaching()` now throws immediately with a clear message when neither a connection string nor an `IConnectionMultiplexer` is available.
+- **Solution did not build** — the sample/test projects pulled in `Microsoft.OpenApi` 2.0.0, which has a known vulnerability (NU1903) that `TreatWarningsAsErrors` turned into a build error. `Microsoft.AspNetCore.OpenApi` and `Scalar.AspNetCore` were bumped to patched versions.
+
+### Added
+
+- **CI workflow** — builds, tests, packs, and verifies the analyzer package layout on every push and pull request.
+- **README quick start and troubleshooting sections**, plus an HTTP error-mapping example.
+- **`CacheKeys.Combine`** (`Vitreous.Caching`) — public helper for building prefixed keys consistently.
+- Tests covering the reflection registration path, generator handling of records/structs/nested/private types, notification/lifetime registration semantics, generated-code compilation, DevUI traces (including notifications and streams), and cache key formatting.
+
+---
+
 ## [0.1.0] - 2026-05-21
 
 ### Added

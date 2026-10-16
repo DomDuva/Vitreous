@@ -17,4 +17,12 @@ public sealed class VitreousDevUIOptions
     /// Defaults to <c>500</c>.
     /// </summary>
     public int TraceBufferCapacity { get; set; } = 500;
+
+    /// <summary>
+    /// Maximum number of stream query items whose serialized form is captured for the
+    /// "Output" tab of a stream trace. Items beyond this limit are still counted but not
+    /// stored, which keeps memory bounded for long-running or infinite streams.
+    /// Defaults to <c>100</c>.
+    /// </summary>
+    public int MaxCapturedStreamItems { get; set; } = 100;
 }

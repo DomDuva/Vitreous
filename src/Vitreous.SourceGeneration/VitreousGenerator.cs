@@ -37,11 +37,14 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Collect every class declaration in the compilation
+        // Collect every class / record / struct declaration in the compilation.
+        // Messages are usually records (and may be structs); handlers are classes or records.
         var classDeclarations = context.SyntaxProvider
             .CreateSyntaxProvider(
-                predicate: static (node, _) => node is ClassDeclarationSyntax,
-                transform: static (ctx, _) => (ClassDeclarationSyntax)ctx.Node)
+                predicate: static (node, _) => node is ClassDeclarationSyntax
+                                            or RecordDeclarationSyntax
+                                            or StructDeclarationSyntax,
+                transform: static (ctx, _) => (TypeDeclarationSyntax)ctx.Node)
             .Where(static c => c is not null);
 
         // Combine with the compilation so we can use semantic analysis
@@ -53,7 +56,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     private static void Execute(
         Compilation compilation,
-        ImmutableArray<ClassDeclarationSyntax> classes,
+        ImmutableArray<TypeDeclarationSyntax> classes,
         SourceProductionContext context)
     {
         // Resolve handler interface symbols
@@ -81,6 +84,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         var discovered    = new List<HandlerInfo>();
         var messageTypes  = new List<MessageTypeInfo>();
+        var seenSymbols   = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
 
         // Track message types that have handlers (to detect missing / duplicate registrations)
         // key = messageFullName, value = list of handler full names
@@ -93,20 +97,33 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         {
             var model  = compilation.GetSemanticModel(classDecl.SyntaxTree);
             var symbol = model.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
-            if (symbol is null || symbol.IsAbstract || symbol.TypeKind != TypeKind.Class)
+            if (symbol is null || symbol.IsAbstract)
                 continue;
 
-            TryCollectHandler(
-                symbol,
-                iCommandHandlerWithResult,
-                iCommandHandlerVoid,
-                iQueryHandler,
-                iNotificationHandler,
-                iStreamQueryHandler,
-                discovered,
-                commandHandlers,
-                queryHandlers,
-                streamQueryHandlers);
+            // Partial types produce one syntax node per part — only process the symbol once.
+            if (!seenSymbols.Add(symbol))
+                continue;
+
+            // The generated dispatcher lives in this assembly, so internal types are fine,
+            // but private/protected nested types cannot be referenced from it.
+            if (!IsAccessibleFromGeneratedCode(symbol))
+                continue;
+
+            // Only non-generic classes (incl. record classes) can be registered as handlers.
+            if (symbol.TypeKind == TypeKind.Class && !symbol.IsGenericType)
+            {
+                TryCollectHandler(
+                    symbol,
+                    iCommandHandlerWithResult,
+                    iCommandHandlerVoid,
+                    iQueryHandler,
+                    iNotificationHandler,
+                    iStreamQueryHandler,
+                    discovered,
+                    commandHandlers,
+                    queryHandlers,
+                    streamQueryHandlers);
+            }
 
             TryCollectMessageType(
                 symbol,
@@ -118,7 +135,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 classDecl.GetLocation());
 
             // VIT003 — check for missing [EnumeratorCancellation] on stream handler methods
-            if (iStreamQueryHandler is not null && enumeratorCancellationAttr is not null)
+            if (symbol.TypeKind == TypeKind.Class &&
+                iStreamQueryHandler is not null && enumeratorCancellationAttr is not null)
             {
                 CheckEnumeratorCancellation(
                     symbol,
@@ -312,6 +330,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         List<MessageTypeInfo> messageTypes,
         Location location)
     {
+        // Open generic message types cannot be dispatched (no concrete type to match on).
+        if (symbol.IsGenericType)
+            return;
+
         foreach (var iface in symbol.AllInterfaces)
         {
             var original = iface.OriginalDefinition;
@@ -484,30 +506,102 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                         messageTypes);
                     break;
 
-                case INamedTypeSymbol type
-                    when !type.IsAbstract && type.TypeKind == TypeKind.Class:
-                    TryCollectHandler(
+                case INamedTypeSymbol type:
+                    CollectFromType(
                         type,
                         iCommandHandlerWithResult,
                         iCommandHandlerVoid,
                         iQueryHandler,
                         iNotificationHandler,
                         iStreamQueryHandler,
-                        discovered,
-                        commandHandlers,
-                        queryHandlers,
-                        streamQueryHandlers);
-                    // Referenced assemblies have no syntax trees — use Location.None
-                    TryCollectMessageType(
-                        type,
                         iCommand,
                         iCommandVoidIf,
                         iQuery,
                         iStreamQuery,
-                        messageTypes,
-                        Location.None);
+                        discovered,
+                        commandHandlers,
+                        queryHandlers,
+                        streamQueryHandlers,
+                        messageTypes);
                     break;
             }
+        }
+    }
+
+    /// <summary>
+    /// Collects handlers / message types from <paramref name="type"/> and recurses into
+    /// its nested types (handlers are commonly nested inside a static feature class).
+    /// </summary>
+    private static void CollectFromType(
+        INamedTypeSymbol type,
+        INamedTypeSymbol? iCommandHandlerWithResult,
+        INamedTypeSymbol? iCommandHandlerVoid,
+        INamedTypeSymbol? iQueryHandler,
+        INamedTypeSymbol? iNotificationHandler,
+        INamedTypeSymbol? iStreamQueryHandler,
+        INamedTypeSymbol? iCommand,
+        INamedTypeSymbol? iCommandVoidIf,
+        INamedTypeSymbol? iQuery,
+        INamedTypeSymbol? iStreamQuery,
+        List<HandlerInfo> discovered,
+        Dictionary<string, List<string>> commandHandlers,
+        Dictionary<string, List<string>> queryHandlers,
+        Dictionary<string, List<string>> streamQueryHandlers,
+        List<MessageTypeInfo> messageTypes)
+    {
+        // Only public types can be referenced from the generated code in another assembly.
+        if (type.DeclaredAccessibility != Accessibility.Public)
+            return;
+
+        if (!type.IsAbstract && !type.IsGenericType)
+        {
+            if (type.TypeKind == TypeKind.Class)
+            {
+                TryCollectHandler(
+                    type,
+                    iCommandHandlerWithResult,
+                    iCommandHandlerVoid,
+                    iQueryHandler,
+                    iNotificationHandler,
+                    iStreamQueryHandler,
+                    discovered,
+                    commandHandlers,
+                    queryHandlers,
+                    streamQueryHandlers);
+            }
+
+            if (type.TypeKind is TypeKind.Class or TypeKind.Struct)
+            {
+                // Referenced assemblies have no syntax trees — use Location.None
+                TryCollectMessageType(
+                    type,
+                    iCommand,
+                    iCommandVoidIf,
+                    iQuery,
+                    iStreamQuery,
+                    messageTypes,
+                    Location.None);
+            }
+        }
+
+        foreach (var nested in type.GetTypeMembers())
+        {
+            CollectFromType(
+                nested,
+                iCommandHandlerWithResult,
+                iCommandHandlerVoid,
+                iQueryHandler,
+                iNotificationHandler,
+                iStreamQueryHandler,
+                iCommand,
+                iCommandVoidIf,
+                iQuery,
+                iStreamQuery,
+                discovered,
+                commandHandlers,
+                queryHandlers,
+                streamQueryHandlers,
+                messageTypes);
         }
     }
 
@@ -590,7 +684,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol enumeratorCancellationAttr,
         Compilation compilation,
         SourceProductionContext context,
-        ClassDeclarationSyntax classDecl)
+        TypeDeclarationSyntax classDecl)
     {
         // Only check classes that implement IStreamQueryHandler<,>
         var implementsStreamHandler = symbol.AllInterfaces.Any(iface =>
@@ -637,6 +731,20 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="symbol"/> and all of its containing
+    /// types are public or internal, i.e. referenceable from generated code in the same assembly.
+    /// </summary>
+    private static bool IsAccessibleFromGeneratedCode(INamedTypeSymbol symbol)
+    {
+        for (INamedTypeSymbol? t = symbol; t is not null; t = t.ContainingType)
+        {
+            if (t.DeclaredAccessibility is not (Accessibility.Public or Accessibility.Internal))
+                return false;
+        }
+        return true;
+    }
 
     private static void AddToMultimap(
         Dictionary<string, List<string>> map,

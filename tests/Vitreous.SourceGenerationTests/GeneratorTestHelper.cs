@@ -46,6 +46,20 @@ internal static class GeneratorTestHelper
         if (!string.IsNullOrEmpty(vitreousLocation) && seen.Add(vitreousLocation))
             refs.Add(MetadataReference.CreateFromFile(vitreousLocation));
 
+        // Microsoft.Extensions.DependencyInjection(.Abstractions) — needed to compile the
+        // generated registration code (ServiceDescriptor, TryAdd, GetRequiredService, ...).
+        foreach (var t in new[]
+                 {
+                     typeof(Microsoft.Extensions.DependencyInjection.ServiceCollection),
+                     typeof(Microsoft.Extensions.DependencyInjection.ServiceDescriptor),
+                     typeof(Microsoft.Extensions.DependencyInjection.Extensions.ServiceCollectionDescriptorExtensions),
+                 })
+        {
+            var loc = t.Assembly.Location;
+            if (!string.IsNullOrEmpty(loc) && seen.Add(loc))
+                refs.Add(MetadataReference.CreateFromFile(loc));
+        }
+
         // ── 3. Any other managed assemblies already loaded in this test process ─────────
         //       Picks up Microsoft.Extensions.*, xunit, etc.
         foreach (var asm in AppDomain.CurrentDomain.GetAssemblies())
@@ -91,5 +105,28 @@ internal static class GeneratorTestHelper
         return (
             result.Diagnostics,
             result.Results.SelectMany(static r => r.GeneratedSources).ToImmutableArray());
+    }
+
+    /// <summary>
+    /// Runs the generator and then compiles the user source together with the generated
+    /// output, returning the C# compiler errors (if any). Use this to assert that the
+    /// generated code is actually valid for a given input shape.
+    /// </summary>
+    internal static ImmutableArray<Diagnostic> RunGeneratorAndCompile(string source)
+    {
+        var syntaxTree = CSharpSyntaxTree.ParseText(source);
+
+        var compilation = CSharpCompilation.Create(
+            assemblyName: "TestAssembly",
+            syntaxTrees: [syntaxTree],
+            references: s_defaultRefs.Value,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        var driver = CSharpGeneratorDriver.Create(new Vitreous.SourceGeneration.VitreousGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out _);
+
+        return updated.GetDiagnostics()
+            .Where(static d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
     }
 }

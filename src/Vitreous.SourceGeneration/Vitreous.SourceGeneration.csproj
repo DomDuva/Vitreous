@@ -17,6 +17,20 @@
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <!-- RS2007: release tracking format is advisory for pre-release -->
     <NoWarn>RS2007</NoWarn>
+
+    <!--
+      Analyzer packaging.
+      A source generator must ship under analyzers/dotnet/cs — NOT under lib/ — otherwise
+      the compiler never loads it and AddVitreousHandlers() is never generated.
+      DevelopmentDependency marks the package as PrivateAssets="all" by default so it is
+      never flowed to consumers of the user's project.
+    -->
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <DevelopmentDependency>true</DevelopmentDependency>
+    <SuppressDependenciesWhenPacking>true</SuppressDependenciesWhenPacking>
+    <!-- NU5128: no lib/ folder is expected for an analyzer package -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
   </PropertyGroup>
 
   <ItemGroup>
@@ -26,6 +40,10 @@
 
   <ItemGroup>
     <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+    <None Include="$(OutputPath)\$(AssemblyName).dll"
+          Pack="true"
+          PackagePath="analyzers/dotnet/cs"
+          Visible="false" />
   </ItemGroup>
 
 </Project>

@@ -75,6 +75,26 @@ public static class ApplicationBuilderExtensions
                 streamTracingBehaviorType));
         }
 
+        // NotificationTracingBehavior — outermost INotificationPipelineBehavior<> for the same reason.
+        var notificationBehaviorType        = typeof(INotificationPipelineBehavior<>);
+        var notificationTracingBehaviorType = typeof(NotificationTracingBehavior<>);
+
+        if (!services.Any(sd =>
+                sd.ServiceType        == notificationBehaviorType &&
+                sd.ImplementationType == notificationTracingBehaviorType))
+        {
+            var insertAt = services
+                .Select((sd, i) => (sd, i))
+                .Where(x => x.sd.ServiceType == notificationBehaviorType)
+                .Select(x => x.i)
+                .DefaultIfEmpty(services.Count)
+                .First();
+
+            services.Insert(insertAt, ServiceDescriptor.Singleton(
+                notificationBehaviorType,
+                notificationTracingBehaviorType));
+        }
+
         return services;
     }
 

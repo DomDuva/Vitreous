@@ -67,5 +67,5 @@ internal sealed class DistributedVitreousCache : IVitreousCache
     public ValueTask RemoveByTagAsync(string tag, CancellationToken ct = default)
         => ValueTask.CompletedTask;
 
-    private string Prefix(string key) => string.IsNullOrEmpty(_keyPrefix) ? key : _keyPrefix + ":" + key;
+    private string Prefix(string key) => CacheKeys.Combine(_keyPrefix, key);
 }

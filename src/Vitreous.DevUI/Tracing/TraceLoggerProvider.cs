@@ -1,4 +1,3 @@
-using System.Collections.Concurrent;
 using Microsoft.Extensions.Logging;
 
 namespace Vitreous.DevUI.Tracing;
@@ -9,14 +8,23 @@ namespace Vitreous.DevUI.Tracing;
 /// </summary>
 public sealed class TraceContext
 {
-    private readonly ConcurrentBag<TraceLogEntry> _logs = new();
+    // A List under a lock (rather than ConcurrentBag) so insertion order is preserved —
+    // ConcurrentBag makes no ordering guarantees and would scramble handler logs.
+    private readonly List<TraceLogEntry> _logs = new();
 
     /// <summary>Captures a log entry.</summary>
-    internal void AddLog(LogLevel level, string message) =>
-        _logs.Add(new TraceLogEntry(level, message, DateTimeOffset.UtcNow));
+    internal void AddLog(LogLevel level, string message)
+    {
+        lock (_logs)
+            _logs.Add(new TraceLogEntry(level, message, DateTimeOffset.UtcNow));
+    }
 
     /// <summary>Returns all captured log entries in insertion order.</summary>
-    internal IReadOnlyList<TraceLogEntry> GetLogs() => _logs.ToArray();
+    internal IReadOnlyList<TraceLogEntry> GetLogs()
+    {
+        lock (_logs)
+            return _logs.ToArray();
+    }
 }
 
 /// <summary>
