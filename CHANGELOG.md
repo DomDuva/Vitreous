@@ -7,6 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.2.0] - Unreleased
+
+### Breaking
+
+- **Handlers default to `Scoped`** (`Vitreous`) — `ISender`/`IPublisher` are singletons only when `DefaultHandlerLifetime` is `Singleton`. Previously a transient or singleton handler was resolved from the root provider, so a scoped `DbContext` was shared by every request. Resolve the sender from a scope, or opt into `Singleton`.
+- **Generated types are `internal`** (`Vitreous.SourceGeneration`) — `VitreousDispatcher` and `VitreousGeneratedServiceCollectionExtensions`, so projects that both run the generator no longer conflict (CS0121/CS0436).
+- **`Error.Internal` no longer copies the exception message into `Extensions`** (`Vitreous`) — the exception is kept on the new `[JsonIgnore] Error.Exception` property instead.
+- **Cache entries use a typed envelope** (`Vitreous.Caching`) — entries written by 0.1.x read as misses.
+- **The DevUI is inactive outside Development** (`Vitreous.DevUI`) unless `VitreousDevUIOptions.Enabled = true`; the tracing behavior constructors changed.
+
+### Fixed
+
+- Dispatch by exact message type: a derived message with its own handler no longer goes to its base type's handler.
+- `ParallelPublisher` starts every handler even if one throws synchronously, and no longer throws `NullReferenceException` when handlers are only canceled.
+- `TakeStream(n)` no longer pulls an extra item from the source; `CollectStream` propagates cancellation.
+- `default(Result)`/`default(Result<T>)` report `Error.Uninitialized` instead of a null `Error`; `Fail(null)` throws.
+- VIT003 only checks async iterators (it fired on helpers where the attribute causes CS8424); VIT002 is reported at each duplicate handler.
+- A Redis outage no longer makes every dispatch fail: the connection is resolved lazily, does not abort on connect failure, and fails fast while disconnected.
+- Redis tag Sets expire with their longest-lived entry instead of growing forever; tag removal no longer blocks Redis.
+- DevUI: faulted streams are shown as failed, slow live clients are dropped instead of buffering without limit, and the browser keeps at most `TraceBufferCapacity` traces.
+
+### Added
+
+- `MapVitreousDevUI()` (supports `RequireAuthorization()`), masking of sensitive values in captured data (`RedactedPropertyNames`, `[Sensitive]`), exception details in DevUI errors, SSE heartbeats, and a strict CSP on the DevUI page.
+- `IVitreousCacheSerializer`, `DefaultAbsoluteExpiration` and stampede protection (`EnableStampedeProtection`) for caching.
+- `Result`/`Result<T>` equality.
+
+### Performance
+
+- Incremental source generator: edits that cannot change the output no longer re-run discovery or regenerate code.
+- Generated dispatch is a single lookup per message type, with no boxing or async state machine; sends without behaviors allocate nothing.
+
+---
+
 ## [0.1.1] - 2026-10-16
 
 ### Fixed

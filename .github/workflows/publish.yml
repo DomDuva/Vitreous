@@ -75,17 +75,21 @@ jobs:
       # Trusted publishing: exchanges the GitHub OIDC token for a short-lived API key.
       # Requires a trusted publishing policy for this repo/workflow on nuget.org and the
       # NUGET_USER repository variable (the nuget.org profile name, not the email).
+      # Until NUGET_USER is set, the NUGET_API_KEY secret is used instead.
       - name: NuGet login (OIDC)
         id: login
+        if: vars.NUGET_USER != ''
         uses: NuGet/login@v1
         with:
           user: ${{ vars.NUGET_USER }}
 
       # Pushing a .nupkg also pushes the matching .snupkg found next to it.
       - name: Push packages to NuGet.org
+        env:
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY || secrets.NUGET_API_KEY }}
         run: |
           dotnet nuget push ./artifacts/*.nupkg \
-            --api-key "${{ steps.login.outputs.NUGET_API_KEY }}" \
+            --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
 

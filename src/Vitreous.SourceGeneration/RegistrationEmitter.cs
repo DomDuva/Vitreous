@@ -221,6 +221,9 @@ internal static class RegistrationEmitter
                 {
                     var handler = services.GetRequiredService<ICommandHandler<TCommand, TResult>>();
                     var behaviors = services.GetServices<IPipelineBehavior<TCommand, TResult>>();
+                    // No behaviors: call the handler directly, without allocating a delegate for it.
+                    if (behaviors is ICollection<IPipelineBehavior<TCommand, TResult>> { Count: 0 })
+                        return handler.Handle(command, ct);
                     MessageHandlerDelegate<TCommand, TResult> terminal = handler.Handle;
                     return PipelineExecutor.Execute(command, terminal, behaviors, ct);
                 }
@@ -231,6 +234,9 @@ internal static class RegistrationEmitter
                 {
                     var handler = services.GetRequiredService<ICommandHandler<TCommand>>();
                     var behaviors = services.GetServices<IPipelineBehavior<TCommand, Unit>>();
+                    // No behaviors: call the handler directly, without allocating a delegate for it.
+                    if (behaviors is ICollection<IPipelineBehavior<TCommand, Unit>> { Count: 0 })
+                        return handler.Handle(command, ct);
                     CommandHandlerDelegate<TCommand> terminal = handler.Handle;
                     return PipelineExecutor.ExecuteVoid(command, terminal, behaviors, ct);
                 }
@@ -241,6 +247,9 @@ internal static class RegistrationEmitter
                 {
                     var handler = services.GetRequiredService<IQueryHandler<TQuery, TResult>>();
                     var behaviors = services.GetServices<IPipelineBehavior<TQuery, TResult>>();
+                    // No behaviors: call the handler directly, without allocating a delegate for it.
+                    if (behaviors is ICollection<IPipelineBehavior<TQuery, TResult>> { Count: 0 })
+                        return handler.Handle(query, ct);
                     MessageHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
                     return PipelineExecutor.Execute(query, terminal, behaviors, ct);
                 }
@@ -251,6 +260,9 @@ internal static class RegistrationEmitter
                 {
                     var handler = services.GetRequiredService<IStreamQueryHandler<TQuery, TResult>>();
                     var behaviors = services.GetServices<IStreamPipelineBehavior<TQuery, TResult>>();
+                    // No behaviors: call the handler directly, without allocating a delegate for it.
+                    if (behaviors is ICollection<IStreamPipelineBehavior<TQuery, TResult>> { Count: 0 })
+                        return handler.Handle(query, ct);
                     StreamQueryHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
                     return PipelineExecutor.ExecuteStream(query, terminal, behaviors, ct);
                 }
