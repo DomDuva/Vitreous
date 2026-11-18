@@ -14,8 +14,8 @@ internal sealed record HandlerInfo(
     string HandlerFullName,
     string MessageFullName,
     HandlerKind Kind,
-    string? ResultFullName, // null for ICommand (void) and INotification handlers
-    LocationInfo? Location // null for handlers discovered in referenced assemblies
+    string? ResultFullName,   // null for ICommand (void) and INotification handlers
+    LocationInfo? Location    // null for handlers discovered in referenced assemblies
 );
 
 /// <summary>
@@ -26,18 +26,18 @@ internal sealed record MessageTypeInfo(
     string MessageFullName,
     string MessageTypeName,
     HandlerKind Kind,
-    string? ResultFullName, // null for ICommand (void)
-    LocationInfo? Location, // null for types discovered in referenced assemblies
-    EquatableArray<string> BaseTypeFullNames // nearest first; a base type's handler also handles this message
+    string? ResultFullName,                    // null for ICommand (void)
+    LocationInfo? Location,                    // null for types discovered in referenced assemblies
+    EquatableArray<string> BaseTypeFullNames   // nearest first; a base type's handler also handles this message
 );
 
 internal enum HandlerKind
 {
-    Command, // ICommandHandler<TCommand, TResult>
-    VoidCommand, // ICommandHandler<TCommand>
-    Query, // IQueryHandler<TQuery, TResult>
-    Notification, // INotificationHandler<TNotification>
-    StreamQuery, // IStreamQueryHandler<TQuery, TResult>
+    Command,        // ICommandHandler<TCommand, TResult>
+    VoidCommand,    // ICommandHandler<TCommand>
+    Query,          // IQueryHandler<TQuery, TResult>
+    Notification,   // INotificationHandler<TNotification>
+    StreamQuery     // IStreamQueryHandler<TQuery, TResult>
 }
 
 /// <summary>
@@ -54,11 +54,7 @@ internal sealed record LocationInfo(string FilePath, TextSpan Span, LinePosition
 /// <summary>
 /// A diagnostic to report, kept as data until the output stage.
 /// </summary>
-internal sealed record DiagnosticInfo(
-    string Id,
-    LocationInfo? Location,
-    EquatableArray<string> Arguments
-);
+internal sealed record DiagnosticInfo(string Id, LocationInfo? Location, EquatableArray<string> Arguments);
 
 /// <summary>
 /// Everything discovered from one type declaration in the current compilation.
@@ -66,8 +62,7 @@ internal sealed record DiagnosticInfo(
 internal sealed record TypeModel(
     EquatableArray<HandlerInfo> Handlers,
     EquatableArray<MessageTypeInfo> Messages,
-    EquatableArray<DiagnosticInfo> Diagnostics
-);
+    EquatableArray<DiagnosticInfo> Diagnostics);
 
 /// <summary>
 /// Handlers and messages discovered in referenced assemblies.
@@ -77,14 +72,10 @@ internal sealed record TypeModel(
 internal sealed record ReferenceModel(
     bool VitreousReferenced,
     EquatableArray<HandlerInfo> Handlers,
-    EquatableArray<MessageTypeInfo> Messages
-)
+    EquatableArray<MessageTypeInfo> Messages)
 {
-    public static readonly ReferenceModel NotReferenced = new(
-        false,
-        EquatableArray<HandlerInfo>.Empty,
-        EquatableArray<MessageTypeInfo>.Empty
-    );
+    public static readonly ReferenceModel NotReferenced =
+        new(false, EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
 }
 
 /// <summary>
@@ -93,8 +84,7 @@ internal sealed record ReferenceModel(
 internal sealed record DiscoveryResult(
     bool VitreousReferenced,
     EquatableArray<HandlerInfo> Handlers,
-    EquatableArray<DiagnosticInfo> Diagnostics
-);
+    EquatableArray<DiagnosticInfo> Diagnostics);
 
 /// <summary>A generated file: hint name and source text.</summary>
 internal sealed record GeneratedFile(string HintName, string Source);
