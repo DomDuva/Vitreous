@@ -334,6 +334,11 @@
       margin-bottom: 16px;
       flex-wrap: wrap;
     }
+    /* Classes rather than style attributes: the page's CSP does not allow inline styles. */
+    .status-text.warning { color: var(--warning); }
+    .status-text.success { color: var(--success); }
+    .status-text.error   { color: var(--error); }
+
     .stream-info-pill {
       background: var(--surface2);
       border: 1px solid var(--border);
@@ -387,6 +392,8 @@
     }
     .error-code { color: var(--error); font-weight: 700; margin-bottom: 4px; }
     .error-message { color: var(--text); }
+    .error-type { color: var(--text-muted, var(--text)); font-family: monospace; font-size: 12px; margin-top: 8px; }
+    .error-stack { margin-top: 8px; max-height: 320px; overflow: auto; font-size: 11px; }
 
     /* ── Scrollbar ───────────────────────────────────────── */
     ::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -441,6 +448,9 @@
 <script>
   // ── State ──────────────────────────────────────────────────────────────────
   let allTraces    = [];
+  const byId       = new Map();  // id → trace, for O(1) lookups on every event
+  let maxTraces    = 500;        // replaced by the server's TraceBufferCapacity
+  const basePath   = location.pathname.replace(/\/?$/, '');
   let activeFilter = 'all';
   let activeOutcome = 'all';  // 'all' | 'success' | 'failure'
   let searchText   = '';
@@ -478,18 +488,57 @@
   }
 
   // ── Filtering ──────────────────────────────────────────────────────────────
+  function passesFilters(t) {
+    const cat = String(t.category ?? '').toLowerCase();
+    if (activeFilter !== 'all' && cat !== activeFilter) return false;
+    // For in-progress streams isSuccess is false until setup fails; treat them
+    // as 'success' for outcome filtering so they appear in the default view.
+    const effectiveSuccess = (cat === 'streamquery' && t.isComplete === false) ? true : t.isSuccess;
+    if (activeOutcome === 'success' && !effectiveSuccess) return false;
+    if (activeOutcome === 'failure' &&  effectiveSuccess) return false;
+    if (searchText && !t.messageType?.toLowerCase().includes(searchText)) return false;
+    return true;
+  }
+
   function filteredTraces() {
-    return allTraces.filter(t => {
-      const cat = String(t.category ?? '').toLowerCase();
-      if (activeFilter !== 'all' && cat !== activeFilter) return false;
-      // For in-progress streams isSuccess is false until setup fails; treat them
-      // as 'success' for outcome filtering so they appear in the default view.
-      const effectiveSuccess = (cat === 'streamquery' && t.isComplete === false) ? true : t.isSuccess;
-      if (activeOutcome === 'success' && !effectiveSuccess) return false;
-      if (activeOutcome === 'failure' &&  effectiveSuccess) return false;
-      if (searchText && !t.messageType?.toLowerCase().includes(searchText)) return false;
-      return true;
-    });
+    return allTraces.filter(passesFilters);
+  }
+
+  // ── Trace bookkeeping ─────────────────────────────────────────────────────
+  // Keeps at most maxTraces in memory (oldest dropped first), like the server's ring buffer.
+  function addTrace(trace) {
+    allTraces.push(trace);
+    byId.set(trace.id, trace);
+    trimTraces();
+  }
+
+  function trimTraces() {
+    if (allTraces.length <= maxTraces) return;
+    const removed = allTraces.splice(0, allTraces.length - maxTraces);
+    for (const t of removed) {
+      byId.delete(t.id);
+      document.querySelector(`.trace-row[data-id="${t.id}"]`)?.remove();
+      if (t.id === expandedId) expandedId = null;
+    }
+  }
+
+  // Inserts or replaces one row instead of re-rendering the whole list on every event.
+  function showTrace(trace) {
+    const list     = document.getElementById('trace-list');
+    const existing = list.querySelector(`.trace-row[data-id="${trace.id}"]`);
+
+    if (!passesFilters(trace)) {
+      existing?.remove();
+    } else if (existing) {
+      existing.replaceWith(buildRow(trace));
+    } else {
+      const newest = list.querySelector('.trace-row');
+      if (newest) list.insertBefore(buildRow(trace), newest);
+      else list.appendChild(buildRow(trace));
+    }
+
+    document.getElementById('empty-state').style.display =
+      list.querySelector('.trace-row') ? 'none' : 'flex';
   }
 
   // ── Rendering ─────────────────────────────────────────────────────────────
@@ -576,8 +625,8 @@
     let streamInfoHtml = '';
     if (isStream) {
       const statusLabel = trace.isComplete === false
-        ? '<span style="color:var(--warning)">In progress…</span>'
-        : (trace.isSuccess ? '<span style="color:var(--success)">Completed</span>' : '<span style="color:var(--error)">Failed</span>');
+        ? '<span class="status-text warning">In progress…</span>'
+        : (trace.isSuccess ? '<span class="status-text success">Completed</span>' : '<span class="status-text error">Failed</span>');
       const itemsLabel  = trace.isComplete !== false && trace.isSuccess
         ? `<strong>${trace.itemCount ?? 0}</strong>`
         : '—';
@@ -611,10 +660,7 @@
         : (trace.isSuccess && trace.serializedOutput
           ? `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`
           : trace.error
-            ? `<div class="error-box">
-                 <div class="error-code">[${esc(trace.error.code)}]</div>
-                 <div class="error-message">${esc(trace.error.message)}</div>
-               </div>`
+            ? buildErrorBox(trace.error)
             : '<p class="no-data">No output.</p>')}
     </div>`);
 
@@ -637,10 +683,7 @@
 
   function buildStreamOutput(trace) {
     if (!trace.isSuccess && trace.error) {
-      return `<div class="error-box">
-        <div class="error-code">[${esc(trace.error.code)}]</div>
-        <div class="error-message">${esc(trace.error.message)}</div>
-      </div>`;
+      return buildErrorBox(trace.error);
     }
     if (trace.isComplete === false) {
       return '<p class="no-data">Stream is still in progress — items will be counted when it closes.</p>';
@@ -651,6 +694,15 @@
       return summary + `<pre class="code-block">${esc(prettyJson(trace.serializedOutput))}</pre>`;
     }
     return summary;
+  }
+
+  function buildErrorBox(error) {
+    return `<div class="error-box">
+      <div class="error-code">[${esc(error.code)}]</div>
+      <div class="error-message">${esc(error.message)}</div>
+      ${error.exceptionType ? `<div class="error-type">${esc(error.exceptionType)}</div>` : ''}
+      ${error.stackTrace ? `<pre class="code-block error-stack">${esc(error.stackTrace)}</pre>` : ''}
+    </div>`;
   }
 
   function buildLogs(logs) {
@@ -716,6 +768,7 @@
 
   document.getElementById('btn-clear').addEventListener('click', () => {
     allTraces  = [];
+    byId.clear();
     expandedId = null;
     updateStats();
     render();
@@ -726,7 +779,7 @@
   const label = document.getElementById('status-label');
 
   function connect() {
-    const es = new EventSource(location.pathname.replace(/\/?$/, '') + '/events');
+    const es = new EventSource(basePath + '/events');
 
     es.onopen = () => {
       dot.className     = 'status-dot connected';
@@ -742,11 +795,11 @@
           handleStreamTrace(trace);
         } else {
           // Standard command / query / notification
-          if (!allTraces.find(t => t.id === trace.id)) {
-            allTraces.push(trace);
+          if (!byId.has(trace.id)) {
+            addTrace(trace);
+            showTrace(trace);
+            updateStats();
           }
-          updateStats();
-          render();
         }
       } catch { /* ignore malformed events */ }
     };
@@ -774,9 +827,9 @@
 
     if (phase === 'opened') {
       // Avoid duplicate on history replay
-      if (allTraces.find(t => t.id === streamId)) return;
+      if (byId.has(streamId)) return;
 
-      allTraces.push({
+      const merged = {
         id:                streamId,     // use streamId as the UI row key
         category:          'streamquery',
         messageType:       trace.messageType,
@@ -792,28 +845,40 @@
         _startedAt:        Date.now(),
         duration:          trace.isSuccess ? null : trace.duration,
         itemCount:         null,
-      });
+      };
 
+      addTrace(merged);
+      showTrace(merged);
       updateStats();
-      render();
 
     } else if (phase === 'closed') {
-      const merged = allTraces.find(t => t.id === streamId);
+      const merged = byId.get(streamId);
       if (!merged) return;   // Closed arrived before Opened (e.g., history replay edge case)
 
       merged.isComplete       = true;
-      merged.isSuccess        = true;
+      merged.isSuccess        = trace.isSuccess !== false;   // a stream can fault mid-iteration
+      merged.error            = trace.error ?? merged.error ?? null;
       merged.duration         = trace.duration;
       merged.itemCount        = trace.itemCount;
       merged.serializedOutput = trace.serializedOutput ?? null;
       merged.logs             = trace.logs ?? [];
 
+      showTrace(merged);
       updateStats();
-      render();
     }
   }
 
-  connect();
+  fetch(basePath + '/api/config')
+    .then(r => r.ok ? r.json() : null)
+    .then(config => {
+      if (config && config.traceBufferCapacity > 0) {
+        maxTraces = config.traceBufferCapacity;
+        trimTraces();
+        updateStats();
+      }
+    })
+    .catch(() => { /* keep the default */ })
+    .finally(connect);
 
   // ── Live timer for in-progress streams ────────────────────────────────────
   // Instead of triggering a full re-render every tick, we patch only the

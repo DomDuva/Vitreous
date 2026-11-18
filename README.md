@@ -623,21 +623,36 @@ dotnet add package Vitreous.DevUI
 
 ```csharp
 // Program.cs
-if (builder.Environment.IsDevelopment())
-    builder.Services.AddVitreousDevUI(options =>
-    {
-        options.PathPrefix             = "/vitreous"; // URL where the UI is mounted
-        options.TraceBufferCapacity    = 500;         // number of traces kept in memory
-        options.MaxCapturedStreamItems = 100;         // stream items serialized into the Output tab
-    });
+builder.Services.AddVitreousDevUI(options =>
+{
+    options.PathPrefix             = "/vitreous"; // URL where the UI is mounted
+    options.TraceBufferCapacity    = 500;         // number of traces kept in memory
+    options.MaxCapturedStreamItems = 100;         // stream items serialized into the Output tab
+    // options.Enabled = true;                    // default null: Development only
+});
 
 var app = builder.Build();
 
-if (app.Environment.IsDevelopment())
-    app.UseVitreousDevUI();
+app.MapVitreousDevUI();   // or app.UseVitreousDevUI() to mount it as middleware
 ```
 
 Navigate to `http://localhost:{port}/vitreous` (or your configured `PathPrefix`) to open the dashboard.
+
+The UI is **off outside Development** unless you set `options.Enabled = true`. While it is off, no endpoints are mapped and the tracing behaviors pass straight through, so calling `AddVitreousDevUI()` unconditionally costs nothing in Production. When you do enable it beyond your machine, protect it:
+
+```csharp
+app.MapVitreousDevUI().RequireAuthorization("Admins");
+```
+
+#### Sensitive data
+
+Captured input, output and stream items are masked as `"***"` for properties whose name contains one of `options.RedactedPropertyNames` (by default `password`, `secret`, `token`, `apiKey`, `authorization`, `creditCard`, `cardNumber`, `cvv`, `ssn`), and for anything marked `[Sensitive]`:
+
+```csharp
+public sealed record LoginCommand(string UserName, [Sensitive] string Pin) : ICommand<Guid>;
+```
+
+Masking applies to serialized messages and results; text your handlers write to `ILogger` is captured as-is.
 
 ### What it captures
 
@@ -648,10 +663,10 @@ Every command, query, notification, and stream query dispatch is traced automati
 | Message type | Simple and fully-qualified type name |
 | Category | `command`, `query`, `notification`, or `streamquery` |
 | Duration | Full wall-clock time including all pipeline behaviors |
-| Outcome | `Success` or `Failure`, with error code and message on failure |
+| Outcome | `Success` or `Failure`, with error code and message on failure, plus exception type and stack trace when an exception is involved |
 | Cache hit | Marked as `Cached` when `Vitreous.Caching` short-circuits the handler |
-| Input | JSON-serialized request message |
-| Output | JSON-serialized success value |
+| Input | JSON-serialized request message (sensitive values masked) |
+| Output | JSON-serialized success value (sensitive values masked) |
 | Logs | All `ILogger` calls emitted inside the handler during the dispatch |
 | Timestamp | Wall-clock time when the dispatch began |
 
@@ -678,6 +693,7 @@ The UI connects over Server-Sent Events (`/vitreous/events`). On page load it re
 | `GET {prefix}` | The single-file dashboard UI |
 | `GET {prefix}/events` | SSE stream (replay + live) |
 | `GET {prefix}/api/traces` | JSON snapshot of the ring buffer |
+| `GET {prefix}/api/config` | Settings the UI reads on load (trace buffer size) |
 
 ---
 

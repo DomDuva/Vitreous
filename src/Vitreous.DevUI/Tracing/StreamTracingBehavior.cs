@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 using Vitreous.Abstractions;
 
 namespace Vitreous.DevUI.Tracing;
@@ -12,32 +11,39 @@ namespace Vitreous.DevUI.Tracing;
 ///         the enumerator is disposed, including the total item count and stream duration.</item>
 /// </list>
 /// Both traces share the same <see cref="ExecutionTrace.StreamId"/>.
+/// Passes straight through, recording nothing, until the developer UI is activated
+/// (see <see cref="DevUIState"/>).
 /// </summary>
 public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBehavior<TMessage, TResult>
     where TMessage : IStreamQuery<TResult>
 {
     private readonly TraceStore _store;
+    private readonly DevUISerializer _serializer;
+    private readonly DevUIState _state;
     private readonly int _maxCapturedItems;
-    private readonly JsonSerializerOptions _jsonOptions;
 
     public StreamTracingBehavior(
         TraceStore store,
-        VitreousDevUIOptions? options = null,
-        JsonSerializerOptions? jsonOptions = null)
+        DevUISerializer serializer,
+        DevUIState state,
+        VitreousDevUIOptions options)
     {
-        _store = store;
-        _maxCapturedItems = options?.MaxCapturedStreamItems ?? 100;
-        _jsonOptions = jsonOptions ?? new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
+        _store            = store;
+        _serializer       = serializer;
+        _state            = state;
+        _maxCapturedItems = options.MaxCapturedStreamItems;
     }
 
-    public async ValueTask<Result<IAsyncEnumerable<TResult>>> Handle(
+    public ValueTask<Result<IAsyncEnumerable<TResult>>> Handle(
         TMessage message,
         StreamQueryHandlerDelegate<TMessage, TResult> next,
         CancellationToken ct = default)
+        => _state.IsActive ? TraceAsync(message, next, ct) : next(message, ct);
+
+    private async ValueTask<Result<IAsyncEnumerable<TResult>>> TraceAsync(
+        TMessage message,
+        StreamQueryHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct)
     {
         var traceCtx = new TraceContext();
         TraceLoggerProvider.Current = traceCtx;
@@ -58,7 +64,7 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
             _store.Append(BuildOpenedTrace(
                 message, sw.Elapsed,
                 isSuccess: false,
-                error: new ErrorSnapshot("EXCEPTION", ex.Message),
+                error: ErrorSnapshot.FromException(ex),
                 streamId: streamId,
                 logs: traceCtx.GetLogs()));
 
@@ -76,7 +82,7 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
             _store.Append(BuildOpenedTrace(
                 message, sw.Elapsed,
                 isSuccess: false,
-                error: new ErrorSnapshot(result.Error.Code, result.Error.Message),
+                error: ErrorSnapshot.FromError(result.Error),
                 streamId: id,
                 logs: traceCtx.GetLogs()));
 
@@ -99,7 +105,7 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
             typeof(TMessage).FullName ?? typeof(TMessage).Name,
             System.Diagnostics.Activity.Current?.TraceId.ToString(),
             traceCtx,
-            _jsonOptions,
+            _serializer,
             _maxCapturedItems);
 
         return Result<IAsyncEnumerable<TResult>>.Ok(tracedStream);
@@ -125,17 +131,10 @@ public sealed class StreamTracingBehavior<TMessage, TResult> : IStreamPipelineBe
             Duration            = duration,
             IsSuccess           = isSuccess,
             Error               = error,
-            SerializedInput     = TrySerialize(message),
+            SerializedInput     = _serializer.SerializePayload(message),
             Logs                = logs,
             CorrelationId       = System.Diagnostics.Activity.Current?.TraceId.ToString(),
             StreamId            = streamId,
             StreamPhase         = StreamPhase.Opened
         };
-
-    private string? TrySerialize<T>(T? value)
-    {
-        if (value is null) return null;
-        try { return JsonSerializer.Serialize(value, _jsonOptions); }
-        catch { return null; }
-    }
 }
