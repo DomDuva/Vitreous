@@ -10,6 +10,21 @@ jobs:
     name: Build & Test
     runs-on: ubuntu-latest
 
+    # Real Redis for the Vitreous.Caching.Redis tests (skipped when VITREOUS_TEST_REDIS is unset).
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+
+    env:
+      VITREOUS_TEST_REDIS: localhost:6379
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4

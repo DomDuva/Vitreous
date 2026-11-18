@@ -21,7 +21,7 @@ public interface ICacheableQuery<TResult> : IQuery<TResult>
 
     /// <summary>
     /// Sliding window expiration — the entry expires if not accessed within this window.
-    /// Ignored by the Redis backend (use <see cref="AbsoluteExpiration"/> instead).
+    /// The Redis backend applies it as a fixed TTL instead (use <see cref="AbsoluteExpiration"/> there).
     /// Null means no sliding expiry.
     /// </summary>
     TimeSpan? SlidingExpiration { get; }
