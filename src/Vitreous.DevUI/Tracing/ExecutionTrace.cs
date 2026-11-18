@@ -72,10 +72,10 @@ public sealed class ExecutionTrace
     /// <summary>Populated when <see cref="IsSuccess"/> is <see langword="false"/>.</summary>
     public ErrorSnapshot? Error { get; init; }
 
-    /// <summary>JSON-serialized input message (may be redacted).</summary>
+    /// <summary>JSON-serialized input message, with sensitive values masked.</summary>
     public string? SerializedInput { get; init; }
 
-    /// <summary>JSON-serialized output/result (may be redacted).</summary>
+    /// <summary>JSON-serialized output/result, with sensitive values masked.</summary>
     public string? SerializedOutput { get; init; }
 
     /// <summary>Structured log entries captured from handlers during this dispatch.</summary>
@@ -107,6 +107,17 @@ public sealed class ExecutionTrace
 }
 
 /// <summary>
-/// A snapshot of an <see cref="Error"/> that is safe to serialize.
+/// A snapshot of an <see cref="Error"/> or exception that is safe to serialize.
+/// <see cref="ExceptionType"/> and <see cref="StackTrace"/> are set when an exception is involved:
+/// thrown by the pipeline, or attached to the error (see <see cref="Vitreous.Error.Exception"/>).
 /// </summary>
-public sealed record ErrorSnapshot(string Code, string Message);
+public sealed record ErrorSnapshot(string Code, string Message, string? ExceptionType = null, string? StackTrace = null)
+{
+    /// <summary>Snapshot of an exception thrown during dispatch.</summary>
+    public static ErrorSnapshot FromException(Exception exception) =>
+        new("EXCEPTION", exception.Message, exception.GetType().FullName, exception.ToString());
+
+    /// <summary>Snapshot of a failure <see cref="Vitreous.Error"/>.</summary>
+    public static ErrorSnapshot FromError(Vitreous.Error error) =>
+        new(error.Code, error.Message, error.Exception?.GetType().FullName, error.Exception?.ToString());
+}

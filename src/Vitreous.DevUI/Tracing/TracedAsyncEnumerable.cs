@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
 
 namespace Vitreous.DevUI.Tracing;
 
@@ -17,7 +16,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
     private readonly string _messageTypeFullName;
     private readonly string? _correlationId;
     private readonly TraceContext _traceCtx;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly DevUISerializer _serializer;
     private readonly int _maxCapturedItems;
 
     internal TracedAsyncEnumerable(
@@ -28,7 +27,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
         string messageTypeFullName,
         string? correlationId,
         TraceContext traceCtx,
-        JsonSerializerOptions jsonOptions,
+        DevUISerializer serializer,
         int maxCapturedItems)
     {
         _inner               = inner;
@@ -38,7 +37,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
         _messageTypeFullName = messageTypeFullName;
         _correlationId       = correlationId;
         _traceCtx            = traceCtx;
-        _jsonOptions         = jsonOptions;
+        _serializer          = serializer;
         _maxCapturedItems    = maxCapturedItems;
     }
 
@@ -51,7 +50,7 @@ internal sealed class TracedAsyncEnumerable<T> : IAsyncEnumerable<T>
             _messageTypeFullName,
             _correlationId,
             _traceCtx,
-            _jsonOptions,
+            _serializer,
             _maxCapturedItems);
 }
 
@@ -75,11 +74,11 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
     private readonly string? _correlationId;
     private readonly Stopwatch _sw = Stopwatch.StartNew();
     private readonly TraceContext _traceCtx;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly DevUISerializer _serializer;
     private readonly int _maxCapturedItems;
     private readonly List<string> _capturedItems = new();
     private int _itemCount;
-    private bool _faulted;
+    private Exception? _fault;
 
     internal TracedAsyncEnumerator(
         IAsyncEnumerator<T> inner,
@@ -89,7 +88,7 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
         string messageTypeFullName,
         string? correlationId,
         TraceContext traceCtx,
-        JsonSerializerOptions jsonOptions,
+        DevUISerializer serializer,
         int maxCapturedItems)
     {
         _inner               = inner;
@@ -99,7 +98,7 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
         _messageTypeFullName = messageTypeFullName;
         _correlationId       = correlationId;
         _traceCtx            = traceCtx;
-        _jsonOptions         = jsonOptions;
+        _serializer          = serializer;
         _maxCapturedItems    = maxCapturedItems;
     }
 
@@ -116,17 +115,17 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
             if (hasNext)
             {
                 _itemCount++;
-                if (_capturedItems.Count < _maxCapturedItems)
+                if (_capturedItems.Count < _maxCapturedItems &&
+                    _serializer.SerializePayload(_inner.Current) is { } item)
                 {
-                    try { _capturedItems.Add(JsonSerializer.Serialize(_inner.Current, _jsonOptions)); }
-                    catch { /* serialization failure is non-fatal */ }
+                    _capturedItems.Add(item);
                 }
             }
             return hasNext;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            _faulted = true;
+            _fault = ex;
             _traceCtx.AddLog(Microsoft.Extensions.Logging.LogLevel.Error,
                 $"Stream faulted: {ex.GetType().Name}: {ex.Message}");
             throw;
@@ -158,7 +157,8 @@ internal sealed class TracedAsyncEnumerator<T> : IAsyncEnumerator<T>
             Category            = MessageCategory.StreamQuery,
             HandlerType         = string.Empty,
             Duration            = _sw.Elapsed,
-            IsSuccess           = !_faulted,
+            IsSuccess           = _fault is null,
+            Error               = _fault is null ? null : ErrorSnapshot.FromException(_fault),
             StreamId            = _streamId,
             StreamPhase         = StreamPhase.Closed,
             ItemCount           = _itemCount,

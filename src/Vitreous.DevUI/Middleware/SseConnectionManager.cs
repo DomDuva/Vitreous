@@ -1,6 +1,4 @@
 using System.Collections.Concurrent;
-using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading.Channels;
 using Vitreous.DevUI.Tracing;
 
@@ -8,17 +6,23 @@ namespace Vitreous.DevUI.Middleware;
 
 /// <summary>
 /// Manages active SSE client connections and broadcasts new traces to all of them.
-/// Thread-safe. Handles client disconnects gracefully.
+/// Thread-safe. Each client has a bounded buffer; a client that falls that far behind is
+/// disconnected (its browser reconnects and replays the buffer).
 /// </summary>
 public sealed class SseConnectionManager : IDisposable
 {
     private readonly ConcurrentDictionary<Guid, Channel<string>> _clients = new();
-    private readonly JsonSerializerOptions _json = new()
+    private readonly DevUISerializer _serializer;
+    private readonly int _clientBufferCapacity;
+
+    public SseConnectionManager(DevUISerializer serializer, VitreousDevUIOptions options)
     {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented        = false,
-        Converters           = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-    };
+        _serializer           = serializer;
+        _clientBufferCapacity = Math.Max(16, options.TraceBufferCapacity);
+    }
+
+    /// <summary>Number of connected clients.</summary>
+    public int ClientCount => _clients.Count;
 
     /// <summary>
     /// Subscribes a new SSE client. Returns a reader channel that yields
@@ -27,21 +31,30 @@ public sealed class SseConnectionManager : IDisposable
     public SseSubscription Subscribe()
     {
         var id      = Guid.NewGuid();
-        var channel = Channel.CreateUnbounded<string>(
-            new UnboundedChannelOptions { SingleWriter = true, SingleReader = true });
+        var channel = Channel.CreateBounded<string>(new BoundedChannelOptions(_clientBufferCapacity)
+        {
+            // Wait (rather than drop) so TryWrite fails when the buffer is full and the slow
+            // client is removed. Traces are broadcast from many request threads at once.
+            FullMode     = BoundedChannelFullMode.Wait,
+            SingleReader = true,
+            SingleWriter = false,
+        });
 
         _clients[id] = channel;
-        return new SseSubscription(id, channel.Reader, () => Remove(id));
+        return new SseSubscription(channel.Reader, () => Remove(id));
     }
 
     /// <summary>
     /// Broadcasts a trace to all active SSE clients.
-    /// Slow or disconnected clients are removed.
+    /// Clients whose buffer is full are removed.
     /// </summary>
     public void Broadcast(ExecutionTrace trace)
     {
-        var json    = JsonSerializer.Serialize(trace, _json);
-        var payload = $"data: {json}\n\n";
+        // Nobody listening: don't pay for serialization on the dispatch path.
+        if (_clients.IsEmpty)
+            return;
+
+        var payload = $"data: {_serializer.SerializeTrace(trace)}\n\n";
 
         foreach (var (id, channel) in _clients)
         {
@@ -74,11 +87,10 @@ public sealed class SseSubscription : IDisposable
 
     public ChannelReader<string> Reader { get; }
 
-    internal SseSubscription(Guid id, ChannelReader<string> reader, Action onDispose)
+    internal SseSubscription(ChannelReader<string> reader, Action onDispose)
     {
         Reader     = reader;
         _onDispose = onDispose;
-        _ = id; // id is captured by the onDispose closure in SseConnectionManager.Subscribe
     }
 
     public void Dispose() => _onDispose();

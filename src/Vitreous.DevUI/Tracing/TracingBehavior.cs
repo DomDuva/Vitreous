@@ -1,6 +1,4 @@
 using System.Diagnostics;
-using System.Text.Json;
-using Microsoft.Extensions.Logging;
 using Vitreous.Abstractions;
 
 namespace Vitreous.DevUI.Tracing;
@@ -10,25 +8,33 @@ namespace Vitreous.DevUI.Tracing;
 /// capturing timing, result, serialized input/output, and handler logs.
 /// Appends an <see cref="ExecutionTrace"/> to <see cref="TraceStore"/> after each dispatch.
 /// </summary>
+/// <remarks>
+/// Passes straight through, recording nothing, until the developer UI is activated
+/// (see <see cref="DevUIState"/>).
+/// </remarks>
 public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMessage, TResult>
 {
     private readonly TraceStore _store;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly DevUISerializer _serializer;
+    private readonly DevUIState _state;
 
-    public TracingBehavior(TraceStore store, JsonSerializerOptions? jsonOptions = null)
+    public TracingBehavior(TraceStore store, DevUISerializer serializer, DevUIState state)
     {
-        _store = store;
-        _jsonOptions = jsonOptions ?? new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
+        _store      = store;
+        _serializer = serializer;
+        _state      = state;
     }
 
-    public async ValueTask<Result<TResult>> Handle(
+    public ValueTask<Result<TResult>> Handle(
         TMessage message,
         MessageHandlerDelegate<TMessage, TResult> next,
         CancellationToken ct = default)
+        => _state.IsActive ? TraceAsync(message, next, ct) : next(message, ct);
+
+    private async ValueTask<Result<TResult>> TraceAsync(
+        TMessage message,
+        MessageHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct)
     {
         // Determine category
         var category = (message is ICommand || message is ICommand<TResult>)
@@ -58,7 +64,7 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
             var errorTrace = BuildTrace(message, category, sw.Elapsed,
                 isSuccess:   false,
                 isCacheHit:  annotations.IsCacheHit,
-                error:       new ErrorSnapshot("EXCEPTION", ex.Message),
+                error:       ErrorSnapshot.FromException(ex),
                 output:      null,
                 logs:        traceCtx.GetLogs());
 
@@ -79,8 +85,8 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
             sw.Elapsed,
             isSuccess:  result.IsSuccess,
             isCacheHit: annotations.IsCacheHit,
-            error:      result.IsFailure ? new ErrorSnapshot(result.Error.Code, result.Error.Message) : null,
-            output:     result.IsSuccess ? TrySerialize(result.Value) : null,
+            error:      result.IsFailure ? ErrorSnapshot.FromError(result.Error) : null,
+            output:     result.IsSuccess ? _serializer.SerializePayload(result.Value) : null,
             logs:       traceCtx.GetLogs());
 
         _store.Append(trace);
@@ -118,24 +124,11 @@ public sealed class TracingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
             IsSuccess           = isSuccess,
             IsCacheHit          = isCacheHit,
             Error               = error,
-            SerializedInput     = TrySerialize(message),
+            SerializedInput     = _serializer.SerializePayload(message),
             SerializedOutput    = output,
             Logs                = logs,
             CorrelationId       = Activity.Current?.TraceId.ToString()
         };
-
-    private string? TrySerialize<T>(T? value)
-    {
-        if (value is null) return null;
-        try
-        {
-            return JsonSerializer.Serialize(value, _jsonOptions);
-        }
-        catch
-        {
-            return null;
-        }
-    }
 }
 
 /// <summary>
@@ -145,22 +138,26 @@ public sealed class NotificationTracingBehavior<TNotification> : INotificationPi
     where TNotification : INotification
 {
     private readonly TraceStore _store;
-    private readonly JsonSerializerOptions _jsonOptions;
+    private readonly DevUISerializer _serializer;
+    private readonly DevUIState _state;
 
-    public NotificationTracingBehavior(TraceStore store, JsonSerializerOptions? jsonOptions = null)
+    public NotificationTracingBehavior(TraceStore store, DevUISerializer serializer, DevUIState state)
     {
-        _store = store;
-        _jsonOptions = jsonOptions ?? new JsonSerializerOptions
-        {
-            WriteIndented = false,
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-        };
+        _store      = store;
+        _serializer = serializer;
+        _state      = state;
     }
 
-    public async ValueTask Handle(
+    public ValueTask Handle(
         TNotification notification,
         NotificationHandlerDelegate<TNotification> next,
         CancellationToken ct = default)
+        => _state.IsActive ? TraceAsync(notification, next, ct) : next(notification, ct);
+
+    private async ValueTask TraceAsync(
+        TNotification notification,
+        NotificationHandlerDelegate<TNotification> next,
+        CancellationToken ct)
     {
         var traceCtx = new TraceContext();
         TraceLoggerProvider.Current = traceCtx;
@@ -176,7 +173,7 @@ public sealed class NotificationTracingBehavior<TNotification> : INotificationPi
         catch (Exception ex)
         {
             isSuccess = false;
-            error = new ErrorSnapshot("EXCEPTION", ex.Message);
+            error = ErrorSnapshot.FromException(ex);
             throw;
         }
         finally
@@ -193,20 +190,13 @@ public sealed class NotificationTracingBehavior<TNotification> : INotificationPi
                 Duration            = sw.Elapsed,
                 IsSuccess           = isSuccess,
                 Error               = error,
-                SerializedInput     = TrySerialize(notification),
+                SerializedInput     = _serializer.SerializePayload(notification),
                 SerializedOutput    = null,
                 Logs                = traceCtx.GetLogs(),
-                CorrelationId       = System.Diagnostics.Activity.Current?.TraceId.ToString()
+                CorrelationId       = Activity.Current?.TraceId.ToString()
             };
 
             _store.Append(trace);
         }
-    }
-
-    private string? TrySerialize<T>(T? value)
-    {
-        if (value is null) return null;
-        try { return JsonSerializer.Serialize(value, _jsonOptions); }
-        catch { return null; }
     }
 }

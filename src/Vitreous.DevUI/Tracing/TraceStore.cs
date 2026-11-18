@@ -14,7 +14,10 @@ public sealed class TraceStore
     private int _head;   // next write position (mod Capacity)
     private int _count;  // number of valid entries (capped at Capacity)
 
-    /// <summary>Event raised on the thread pool after each new trace is appended.</summary>
+    /// <summary>
+    /// Event raised synchronously, on the dispatching thread, after each new trace is appended.
+    /// Handlers must be fast and must not throw.
+    /// </summary>
     public event Action<ExecutionTrace>? TraceAdded;
 
     /// <summary>Maximum number of traces retained. Configurable via <see cref="VitreousDevUIOptions"/>.</summary>

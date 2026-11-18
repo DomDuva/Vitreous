@@ -19,6 +19,10 @@
     <ProjectReference Include="..\Vitreous\Vitreous.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Vitreous.UnitTests" />
+  </ItemGroup>
+
   <!-- Embed the single-file UI as an assembly resource -->
   <ItemGroup>
     <EmbeddedResource Include="wwwroot\index.html" />
