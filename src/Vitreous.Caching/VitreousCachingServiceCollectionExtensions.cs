@@ -1,5 +1,6 @@
 using Vitreous.Caching.Behaviors;
 using Vitreous.Caching.Internal;
+using Vitreous.Caching.Serialization;
 
 namespace Vitreous.Caching;
 
@@ -31,7 +32,10 @@ public static class VitreousCachingServiceCollectionExtensions
         var options = new VitreousCachingOptions();
         configure?.Invoke(options);
 
-        services.AddSingleton(options);
+        // TryAdd: calling this more than once must not register a second instance.
+        services.TryAddSingleton(options);
+        services.TryAddSingleton<IVitreousCacheSerializer>(static sp =>
+            new SystemTextJsonVitreousCacheSerializer(sp.GetRequiredService<VitreousCachingOptions>().JsonSerializerOptions));
         services.TryAddSingleton<IVitreousCache, DistributedVitreousCache>();
 
         // CachingBehavior must be innermost (registered last) so it short-circuits

@@ -2,7 +2,8 @@ namespace Vitreous.Caching.Internal;
 
 /// <summary>
 /// Default implementation of <see cref="IVitreousCache"/> backed by
-/// <see cref="IDistributedCache"/>. Serialises values as JSON.
+/// <see cref="IDistributedCache"/>. Values are written with the registered
+/// <see cref="IVitreousCacheSerializer"/>.
 /// <para>
 /// Tag-based removal (<see cref="RemoveByTagAsync"/>) is a <em>no-op</em> with this
 /// implementation. Use <c>Vitreous.Caching.Redis</c> if you need tag invalidation.
@@ -11,21 +12,20 @@ namespace Vitreous.Caching.Internal;
 internal sealed class DistributedVitreousCache : IVitreousCache
 {
     private readonly IDistributedCache _cache;
+    private readonly IVitreousCacheSerializer _serializer;
     private readonly string _keyPrefix;
     private readonly ILogger<DistributedVitreousCache> _logger;
-    private static readonly JsonSerializerOptions _json = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
 
     public DistributedVitreousCache(
         IDistributedCache cache,
+        IVitreousCacheSerializer serializer,
         VitreousCachingOptions options,
         ILogger<DistributedVitreousCache> logger)
     {
-        _cache     = cache;
-        _keyPrefix = options.KeyPrefix;
-        _logger    = logger;
+        _cache      = cache;
+        _serializer = serializer;
+        _keyPrefix  = options.KeyPrefix;
+        _logger     = logger;
     }
 
     public async ValueTask<(bool Hit, T? Value)> GetAsync<T>(string key, CancellationToken ct = default)
@@ -36,10 +36,11 @@ internal sealed class DistributedVitreousCache : IVitreousCache
 
         try
         {
-            var value = JsonSerializer.Deserialize<T>(bytes, _json);
-            return (true, value);
+            return _serializer.TryDeserialize<T>(bytes, out var value)
+                ? (true, value)
+                : (false, default);
         }
-        catch (JsonException ex)
+        catch (Exception ex) when (ex is JsonException or NotSupportedException)
         {
             _logger.LogWarning(ex,
                 "Vitreous.Caching: failed to deserialise cached value for key '{Key}'", key);
@@ -54,7 +55,7 @@ internal sealed class DistributedVitreousCache : IVitreousCache
         DistributedCacheEntryOptions options,
         CancellationToken ct = default)
     {
-        var bytes = JsonSerializer.SerializeToUtf8Bytes(value, _json);
+        var bytes = _serializer.Serialize(value);
         await _cache.SetAsync(Prefix(key), bytes, options, ct);
         // Tags are not tracked by this backend — use Vitreous.Caching.Redis for tag invalidation.
     }

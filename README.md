@@ -705,6 +705,14 @@ builder.Services.AddVitreousCaching(options =>
 
 Keys are stored as `{KeyPrefix}:{CacheKey}` with exactly one `:` separator (a prefix that already ends in `:` is not doubled), identically for both backends.
 
+Other options (the Redis backend has the same ones):
+
+- `DefaultAbsoluteExpiration` — TTL for queries that set neither expiration. Default `null` (never expires).
+- `EnableStampedeProtection` — concurrent misses for the same key share one handler call. Default `true`.
+- `JsonSerializerOptions` — used by the default serializer. Register your own `IVitreousCacheSerializer` to replace it.
+
+Values are stored together with their result type, so two queries that share a cache key but return different types get a miss instead of each other's data.
+
 #### Making a query cacheable
 
 Implement `ICacheableQuery<TResult>` instead of `IQuery<TResult>`:
@@ -789,9 +797,11 @@ public sealed record CreateOrderCommand(Guid CustomerId) : ICommand<Guid>, IInva
 }
 ```
 
-Internally, each tag is a Redis Set. When a value is written, its key is added to every tag Set. `RemoveByTagAsync` runs a Lua script that reads the Set, deletes every member key, and deletes the Set itself — atomically on a single node.
+Internally, each tag is a Redis Set. A value and its tag memberships are written together in one Lua script, and each tag Set expires with the longest-lived entry it holds. `RemoveByTagAsync` detaches the Set atomically, then deletes its entries in pages with `SSCAN` and `UNLINK`, so a large tag never blocks Redis.
 
-> **Redis Cluster:** the Lua script deletes keys discovered at runtime, which is not compatible with Redis Cluster if tagged keys are distributed across multiple hash slots. Use hash tags in your key names (e.g. `{order}:123`) to colocate related keys on the same slot.
+> **Redis Cluster:** an entry and its tags are written in one script, so they must share a hash slot. Use the same hash tag in both prefixes, e.g. `KeyPrefix = "{myapp}:"` and `TagPrefix = "{myapp}:tag:"`.
+
+If Redis is unreachable, requests keep working: messages that don't use the cache never touch Redis, and cache reads and writes fail fast and fall back to the handler. The connection created from `ConnectionString` uses `abortConnect=false` and reconnects in the background.
 
 #### Sliding expiration
 
