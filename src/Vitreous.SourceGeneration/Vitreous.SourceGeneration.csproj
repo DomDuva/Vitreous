@@ -15,8 +15,6 @@
     <LangVersion>latest</LangVersion>
     <!-- Don't inherit TreatWarningsAsErrors — generator warnings are advisory -->
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
-    <!-- RS2007: release tracking format is advisory for pre-release -->
-    <NoWarn>RS2007</NoWarn>
 
     <!--
       Analyzer packaging.
@@ -36,6 +34,12 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.CodeAnalysis.CSharp" PrivateAssets="all" />
     <PackageReference Include="Microsoft.CodeAnalysis.Analyzers" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Analyzer release tracking (RS2000-RS2008) reads these to validate diagnostic IDs -->
+  <ItemGroup>
+    <AdditionalFiles Include="AnalyzerReleases.Shipped.md" />
+    <AdditionalFiles Include="AnalyzerReleases.Unshipped.md" />
   </ItemGroup>
 
   <ItemGroup>
