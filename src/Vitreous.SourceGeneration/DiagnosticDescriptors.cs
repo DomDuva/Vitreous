@@ -46,4 +46,13 @@ internal static class DiagnosticDescriptors
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,
         description: "Iterator methods returning IAsyncEnumerable<T> must decorate their CancellationToken parameter with [EnumeratorCancellation] so that callers can cancel mid-stream via .WithCancellation(ct).");
+
+    /// <summary>Returns the descriptor with the given <paramref name="id"/>.</summary>
+    internal static DiagnosticDescriptor ById(string id) => id switch
+    {
+        "VIT001" => NoHandlerFound,
+        "VIT002" => MultipleHandlersFound,
+        "VIT003" => MissingEnumeratorCancellation,
+        _ => throw new ArgumentOutOfRangeException(nameof(id), id, "Unknown Vitreous diagnostic id."),
+    };
 }
