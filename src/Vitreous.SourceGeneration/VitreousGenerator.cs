@@ -1,4 +1,5 @@
 using System.Collections.Immutable;
+using System.Runtime.CompilerServices;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp.Syntax;
 
@@ -15,174 +16,299 @@ namespace Vitreous.SourceGeneration;
 /// that directly references the Vitreous core package, enabling multi-project / DDD solutions
 /// without any additional configuration.
 /// </summary>
+/// <remarks>
+/// The pipeline is incremental end to end:
+/// <list type="number">
+///   <item>Each type declaration with a base list is turned into an equatable <see cref="TypeModel"/>.
+///         Only declarations in edited files are re-analysed.</item>
+///   <item>Referenced assemblies are scanned into a <see cref="ReferenceModel"/>, cached per
+///         <see cref="MetadataReference"/>, so unchanged references are never walked twice.</item>
+///   <item>Both are merged into a <see cref="DiscoveryResult"/>; generated sources are produced from it
+///         and are skipped entirely when it compares equal to the previous run.</item>
+/// </list>
+/// </remarks>
 [Generator]
 public sealed class VitreousGenerator : IIncrementalGenerator
 {
-    // Well-known handler interface names (unqualified generic arities)
-    private const string CommandHandlerWithResult = "Vitreous.Abstractions.ICommandHandler`2";
-    private const string CommandHandlerVoid       = "Vitreous.Abstractions.ICommandHandler`1";
-    private const string QueryHandler             = "Vitreous.Abstractions.IQueryHandler`2";
-    private const string NotificationHandler      = "Vitreous.Abstractions.INotificationHandler`1";
-    private const string StreamQueryHandler       = "Vitreous.Abstractions.IStreamQueryHandler`2";
-
-    // Well-known message interface names (used for VIT001 — no handler found)
-    private const string ICommandWithResult  = "Vitreous.Abstractions.ICommand`1";
-    private const string ICommandVoid        = "Vitreous.Abstractions.ICommand";
-    private const string IQueryInterface     = "Vitreous.Abstractions.IQuery`1";
-    private const string IStreamQueryInterface = "Vitreous.Abstractions.IStreamQuery`1";
-
-    // [EnumeratorCancellation] attribute full name (used for VIT003)
-    private const string EnumeratorCancellationAttribute =
-        "System.Runtime.CompilerServices.EnumeratorCancellationAttribute";
+    /// <summary>Step names, for incremental-caching tests.</summary>
+    internal static class TrackingNames
+    {
+        public const string SourceTypes = "VitreousSourceTypes";
+        public const string ReferencedTypes = "VitreousReferencedTypes";
+        public const string Discovery = "VitreousDiscovery";
+        public const string GeneratedSources = "VitreousGeneratedSources";
+    }
 
     public void Initialize(IncrementalGeneratorInitializationContext context)
     {
-        // Collect every class / record / struct declaration in the compilation.
         // Messages are usually records (and may be structs); handlers are classes or records.
-        var classDeclarations = context.SyntaxProvider
-            .CreateSyntaxProvider(
-                predicate: static (node, _) => node is ClassDeclarationSyntax
-                                            or RecordDeclarationSyntax
-                                            or StructDeclarationSyntax,
-                transform: static (ctx, _) => (TypeDeclarationSyntax)ctx.Node)
-            .Where(static c => c is not null);
+        // Anything that implements a Vitreous interface has a base list in at least one part.
+        var sourceTypes = context
+            .SyntaxProvider.CreateSyntaxProvider(
+                predicate: static (node, _) =>
+                    node
+                        is ClassDeclarationSyntax
+                            or RecordDeclarationSyntax
+                            or StructDeclarationSyntax
+                    && ((TypeDeclarationSyntax)node).BaseList is not null,
+                transform: static (ctx, ct) => TransformType(ctx, ct)
+            )
+            .Where(static model => model is not null)
+            .Select(static (model, _) => model!)
+            .WithTrackingName(TrackingNames.SourceTypes)
+            .Collect();
 
-        // Combine with the compilation so we can use semantic analysis
-        var compilationAndClasses = context.CompilationProvider.Combine(classDeclarations.Collect());
+        var referencedTypes = context
+            .CompilationProvider.Select(static (compilation, ct) => ScanReferences(compilation, ct))
+            .WithTrackingName(TrackingNames.ReferencedTypes);
 
-        context.RegisterSourceOutput(compilationAndClasses, static (spc, source) =>
-            Execute(source.Left, source.Right, spc));
+        var discovery = sourceTypes
+            .Combine(referencedTypes)
+            .Select(static (pair, _) => Merge(pair.Left, pair.Right))
+            .WithTrackingName(TrackingNames.Discovery);
+
+        var generatedSources = discovery
+            .Select(static (result, _) => Emit(result))
+            .WithTrackingName(TrackingNames.GeneratedSources);
+
+        context.RegisterSourceOutput(
+            generatedSources,
+            static (spc, files) =>
+            {
+                foreach (var file in files)
+                    spc.AddSource(file.HintName, file.Source);
+            }
+        );
+
+        // Diagnostics need real Locations, which must point into the current compilation's
+        // syntax trees. Mapping them back is cheap, so this output may run on every compilation
+        // without affecting the cached source generation above.
+        var diagnostics = discovery.Select(static (result, _) => result.Diagnostics);
+
+        context.RegisterSourceOutput(
+            diagnostics.Combine(context.CompilationProvider),
+            static (spc, pair) => ReportDiagnostics(spc, pair.Left, pair.Right)
+        );
     }
 
-    private static void Execute(
-        Compilation compilation,
-        ImmutableArray<TypeDeclarationSyntax> classes,
-        SourceProductionContext context)
+    // -------------------------------------------------------------------------
+    // Pipeline steps
+    // -------------------------------------------------------------------------
+
+    private static TypeModel? TransformType(GeneratorSyntaxContext ctx, CancellationToken ct)
     {
-        // Resolve handler interface symbols
-        var iCommandHandlerWithResult = compilation.GetTypeByMetadataName(CommandHandlerWithResult);
-        var iCommandHandlerVoid       = compilation.GetTypeByMetadataName(CommandHandlerVoid);
-        var iQueryHandler             = compilation.GetTypeByMetadataName(QueryHandler);
-        var iNotificationHandler      = compilation.GetTypeByMetadataName(NotificationHandler);
-        var iStreamQueryHandler       = compilation.GetTypeByMetadataName(StreamQueryHandler);
+        if (ctx.SemanticModel.GetDeclaredSymbol(ctx.Node, ct) is not INamedTypeSymbol symbol)
+            return null;
 
-        if (iCommandHandlerWithResult is null && iCommandHandlerVoid is null &&
-            iQueryHandler is null && iNotificationHandler is null && iStreamQueryHandler is null)
+        var types = WellKnownTypes.Get(ctx.SemanticModel.Compilation);
+        if (types is null || symbol.IsAbstract)
+            return null;
+
+        // The generated dispatcher lives in this assembly, so internal types are fine,
+        // but private/protected nested types cannot be referenced from it.
+        if (!IsAccessibleFromGeneratedCode(symbol))
+            return null;
+
+        var handlers =
+            symbol.TypeKind == TypeKind.Class && !symbol.IsGenericType
+                ? CollectHandlers(symbol, types, LocationInfo.From(SourceLocation(symbol)))
+                : EquatableArray<HandlerInfo>.Empty;
+
+        var messages = CollectMessageType(symbol, types, LocationInfo.From(ctx.Node.GetLocation()));
+
+        var diagnostics =
+            symbol.TypeKind == TypeKind.Class
+                ? CheckEnumeratorCancellation(symbol, types)
+                : EquatableArray<DiagnosticInfo>.Empty;
+
+        if (handlers.Count == 0 && messages.Count == 0 && diagnostics.Count == 0)
+            return null;
+
+        return new TypeModel(handlers, messages, diagnostics);
+    }
+
+    // Per-reference cache: a MetadataReference object is reused across compilations while the
+    // reference is unchanged, so its handlers/messages are scanned once instead of per keystroke.
+    private static readonly ConditionalWeakTable<
+        MetadataReference,
+        ReferenceScan
+    > s_referenceScans = new();
+
+    private sealed class ReferenceScan
+    {
+        public ReferenceScan(
+            EquatableArray<HandlerInfo> handlers,
+            EquatableArray<MessageTypeInfo> messages
+        )
         {
-            // Vitreous.Abstractions not referenced — nothing to do
-            return;
+            Handlers = handlers;
+            Messages = messages;
         }
 
-        // Resolve message interface symbols (for VIT001)
-        var iCommand         = compilation.GetTypeByMetadataName(ICommandWithResult);
-        var iCommandVoidIf   = compilation.GetTypeByMetadataName(ICommandVoid);
-        var iQuery           = compilation.GetTypeByMetadataName(IQueryInterface);
-        var iStreamQuery     = compilation.GetTypeByMetadataName(IStreamQueryInterface);
+        public EquatableArray<HandlerInfo> Handlers { get; }
 
-        // Resolve [EnumeratorCancellation] for VIT003
-        var enumeratorCancellationAttr = compilation.GetTypeByMetadataName(EnumeratorCancellationAttribute);
+        public EquatableArray<MessageTypeInfo> Messages { get; }
+    }
 
-        var discovered    = new List<HandlerInfo>();
-        var messageTypes  = new List<MessageTypeInfo>();
-        var seenSymbols   = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
+    private static ReferenceModel ScanReferences(Compilation compilation, CancellationToken ct)
+    {
+        var types = WellKnownTypes.Get(compilation);
+        if (types is null)
+            return ReferenceModel.NotReferenced;
 
-        // Track message types that have handlers (to detect missing / duplicate registrations)
-        // key = messageFullName, value = list of (handler full name, handler location)
-        var commandHandlers     = new Dictionary<string, List<HandlerRef>>();
-        var queryHandlers       = new Dictionary<string, List<HandlerRef>>();
-        var streamQueryHandlers = new Dictionary<string, List<HandlerRef>>();
+        var handlers = ImmutableArray.CreateBuilder<HandlerInfo>();
+        var messages = ImmutableArray.CreateBuilder<MessageTypeInfo>();
 
-        // ── Pass 1: current project's syntax trees ────────────────────────────
-        foreach (var classDecl in classes)
+        foreach (var reference in compilation.References)
         {
-            var model  = compilation.GetSemanticModel(classDecl.SyntaxTree);
-            var symbol = model.GetDeclaredSymbol(classDecl) as INamedTypeSymbol;
-            if (symbol is null || symbol.IsAbstract)
-                continue;
+            ct.ThrowIfCancellationRequested();
 
-            // Partial types produce one syntax node per part — only process the symbol once.
-            if (!seenSymbols.Add(symbol))
-                continue;
-
-            // The generated dispatcher lives in this assembly, so internal types are fine,
-            // but private/protected nested types cannot be referenced from it.
-            if (!IsAccessibleFromGeneratedCode(symbol))
-                continue;
-
-            // Only non-generic classes (incl. record classes) can be registered as handlers.
-            if (symbol.TypeKind == TypeKind.Class && !symbol.IsGenericType)
-            {
-                TryCollectHandler(
-                    symbol,
-                    iCommandHandlerWithResult,
-                    iCommandHandlerVoid,
-                    iQueryHandler,
-                    iNotificationHandler,
-                    iStreamQueryHandler,
-                    discovered,
-                    commandHandlers,
-                    queryHandlers,
-                    streamQueryHandlers);
-            }
-
-            TryCollectMessageType(
-                symbol,
-                iCommand,
-                iCommandVoidIf,
-                iQuery,
-                iStreamQuery,
-                messageTypes,
-                classDecl.GetLocation());
-
-            // VIT003 — check for missing [EnumeratorCancellation] on stream handler methods
-            if (symbol.TypeKind == TypeKind.Class &&
-                iStreamQueryHandler is not null && enumeratorCancellationAttr is not null)
-            {
-                CheckEnumeratorCancellation(
-                    symbol,
-                    iStreamQueryHandler,
-                    enumeratorCancellationAttr,
-                    compilation,
-                    context,
-                    classDecl);
-            }
+            var scan = s_referenceScans.GetValue(
+                reference,
+                r => ScanReference(compilation, r, types, ct)
+            );
+            handlers.AddRange(scan.Handlers);
+            messages.AddRange(scan.Messages);
         }
 
-        // ── Pass 2: referenced assemblies that reference Vitreous ─────────────
-        // Discovers handlers and message types in other projects (e.g. Application /
-        // Infrastructure layers in a DDD solution) without requiring the source generator
-        // to be installed on those projects.
-        CollectFromReferencedAssemblies(
-            compilation,
-            iCommandHandlerWithResult,
-            iCommandHandlerVoid,
-            iQueryHandler,
-            iNotificationHandler,
-            iStreamQueryHandler,
-            iCommand,
-            iCommandVoidIf,
-            iQuery,
-            iStreamQuery,
-            discovered,
+        return new ReferenceModel(true, new(handlers.ToImmutable()), new(messages.ToImmutable()));
+    }
+
+    private static ReferenceScan ScanReference(
+        Compilation compilation,
+        MetadataReference reference,
+        WellKnownTypes types,
+        CancellationToken ct
+    )
+    {
+        // Only assemblies that directly reference Vitreous can contain handler implementations.
+        // This skips the BCL, ASP.NET Core and unrelated packages without walking them.
+        if (
+            compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly
+            || !ReferencesVitreous(assembly)
+        )
+        {
+            return new ReferenceScan(
+                EquatableArray<HandlerInfo>.Empty,
+                EquatableArray<MessageTypeInfo>.Empty
+            );
+        }
+
+        var handlers = new List<HandlerInfo>();
+        var messages = new List<MessageTypeInfo>();
+        CollectFromNamespace(assembly.GlobalNamespace, types, handlers, messages, ct);
+        return new ReferenceScan(handlers.ToEquatableArray(), messages.ToEquatableArray());
+    }
+
+    private static DiscoveryResult Merge(
+        ImmutableArray<TypeModel> sourceTypes,
+        ReferenceModel references
+    )
+    {
+        if (!references.VitreousReferenced)
+            return new DiscoveryResult(
+                false,
+                EquatableArray<HandlerInfo>.Empty,
+                EquatableArray<DiagnosticInfo>.Empty
+            );
+
+        // Partial types produce one model per part that has a base list; keep each entry once.
+        var handlers = sourceTypes
+            .SelectMany(static t => t.Handlers)
+            .Concat(references.Handlers)
+            .GroupBy(static h => (h.HandlerFullName, h.MessageFullName, h.Kind))
+            .Select(static g => g.First())
+            .ToList();
+
+        var messages = sourceTypes
+            .SelectMany(static t => t.Messages)
+            .Concat(references.Messages)
+            .GroupBy(static m => m.MessageFullName)
+            .Select(static g => g.First())
+            .ToList();
+
+        var diagnostics = new List<DiagnosticInfo>();
+        diagnostics.AddRange(sourceTypes.SelectMany(static t => t.Diagnostics).Distinct());
+
+        var commandHandlers = GroupByMessage(
+            handlers,
+            HandlerKind.Command,
+            HandlerKind.VoidCommand
+        );
+        var queryHandlers = GroupByMessage(handlers, HandlerKind.Query);
+        var streamQueryHandlers = GroupByMessage(handlers, HandlerKind.StreamQuery);
+
+        // VIT002 — ambiguous dispatch (multiple handlers per message)
+        AddDuplicateDiagnostics(diagnostics, commandHandlers);
+        AddDuplicateDiagnostics(diagnostics, queryHandlers);
+        AddDuplicateDiagnostics(diagnostics, streamQueryHandlers);
+
+        // VIT001 — no handler found for a command/query/stream-query type
+        AddNoHandlerDiagnostics(
+            diagnostics,
+            messages,
             commandHandlers,
             queryHandlers,
-            streamQueryHandlers,
-            messageTypes);
+            streamQueryHandlers
+        );
 
-        // Report VIT002 — ambiguous dispatch (multiple handlers per message)
-        ReportDuplicateDiagnostics(context, commandHandlers);
-        ReportDuplicateDiagnostics(context, queryHandlers);
-        ReportDuplicateDiagnostics(context, streamQueryHandlers);
+        return new DiscoveryResult(
+            true,
+            handlers.ToEquatableArray(),
+            diagnostics.ToEquatableArray()
+        );
+    }
 
-        // Report VIT001 — no handler found for a command/query/stream-query type
-        ReportNoHandlerDiagnostics(context, messageTypes, commandHandlers, queryHandlers, streamQueryHandlers);
+    private static EquatableArray<GeneratedFile> Emit(DiscoveryResult result)
+    {
+        if (!result.VitreousReferenced)
+            return EquatableArray<GeneratedFile>.Empty;
 
-        // Emit source files
-        var source1 = RegistrationEmitter.EmitServiceCollectionExtensions(discovered);
-        context.AddSource("VitreousServiceCollectionExtensions.g.cs", source1);
+        var handlers = result.Handlers.AsImmutableArray();
+        return new[]
+        {
+            new GeneratedFile(
+                "VitreousServiceCollectionExtensions.g.cs",
+                RegistrationEmitter.EmitServiceCollectionExtensions(handlers)
+            ),
+            new GeneratedFile(
+                "VitreousDispatcher.g.cs",
+                RegistrationEmitter.EmitDispatcher(handlers)
+            ),
+        }.ToEquatableArray();
+    }
 
-        var source2 = RegistrationEmitter.EmitDispatcher(discovered);
-        context.AddSource("VitreousDispatcher.g.cs", source2);
+    private static void ReportDiagnostics(
+        SourceProductionContext context,
+        EquatableArray<DiagnosticInfo> diagnostics,
+        Compilation compilation
+    )
+    {
+        if (diagnostics.Count == 0)
+            return;
+
+        var trees = new Dictionary<string, SyntaxTree>();
+        foreach (var tree in compilation.SyntaxTrees)
+        {
+            if (!trees.ContainsKey(tree.FilePath))
+                trees[tree.FilePath] = tree;
+        }
+
+        foreach (var info in diagnostics)
+        {
+            var location =
+                info.Location is { } l && trees.TryGetValue(l.FilePath, out var tree)
+                    ? Location.Create(tree, l.Span)
+                    : Location.None;
+
+            context.ReportDiagnostic(
+                Diagnostic.Create(
+                    DiagnosticDescriptors.ById(info.Id),
+                    location,
+                    info.Arguments.Cast<object?>().ToArray()
+                )
+            );
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -190,270 +316,105 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Inspects <paramref name="symbol"/>'s implemented interfaces and records any
-    /// Vitreous handler registrations into <paramref name="discovered"/>.
+    /// Inspects <paramref name="symbol"/>'s implemented interfaces and returns any
+    /// Vitreous handler registrations it provides.
     /// </summary>
-    private static void TryCollectHandler(
+    private static EquatableArray<HandlerInfo> CollectHandlers(
         INamedTypeSymbol symbol,
-        INamedTypeSymbol? iCommandHandlerWithResult,
-        INamedTypeSymbol? iCommandHandlerVoid,
-        INamedTypeSymbol? iQueryHandler,
-        INamedTypeSymbol? iNotificationHandler,
-        INamedTypeSymbol? iStreamQueryHandler,
-        List<HandlerInfo> discovered,
-        Dictionary<string, List<HandlerRef>> commandHandlers,
-        Dictionary<string, List<HandlerRef>> queryHandlers,
-        Dictionary<string, List<HandlerRef>> streamQueryHandlers)
+        WellKnownTypes types,
+        LocationInfo? location
+    )
     {
+        List<HandlerInfo>? found = null;
+        var handlerName = FullName(symbol);
+
         foreach (var iface in symbol.AllInterfaces)
         {
             var original = iface.OriginalDefinition;
 
-            // ICommandHandler<TCommand, TResult>
-            if (iCommandHandlerWithResult is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iCommandHandlerWithResult))
-            {
-                var msgType    = iface.TypeArguments[0];
-                var resultType = iface.TypeArguments[1];
-                var info = new HandlerInfo(
-                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
-                    HandlerClassName: symbol.Name,
-                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName:  msgType.Name,
-                    Kind:             HandlerKind.Command,
-                    ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
-
-                discovered.Add(info);
-                AddToMultimap(commandHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
+            HandlerKind kind;
+            if (Is(original, types.CommandHandlerWithResult))
+                kind = HandlerKind.Command;
+            else if (Is(original, types.CommandHandlerVoid))
+                kind = HandlerKind.VoidCommand;
+            else if (Is(original, types.QueryHandler))
+                kind = HandlerKind.Query;
+            else if (Is(original, types.NotificationHandler))
+                kind = HandlerKind.Notification;
+            else if (Is(original, types.StreamQueryHandler))
+                kind = HandlerKind.StreamQuery;
+            else
                 continue;
-            }
 
-            // ICommandHandler<TCommand> — void command (check arity to avoid matching the 2-arg version)
-            if (iCommandHandlerVoid is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iCommandHandlerVoid) &&
-                iface.TypeArguments.Length == 1)
-            {
-                // Ensure this is not the 2-arg variant being matched as 1-arg
-                if (iCommandHandlerWithResult is not null &&
-                    SymbolEqualityComparer.Default.Equals(original, iCommandHandlerWithResult))
-                    continue;
+            var resultName =
+                iface.TypeArguments.Length == 2 ? FullName(iface.TypeArguments[1]) : null;
 
-                var msgType = iface.TypeArguments[0];
-                var info = new HandlerInfo(
-                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
-                    HandlerClassName: symbol.Name,
-                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName:  msgType.Name,
-                    Kind:             HandlerKind.VoidCommand,
-                    ResultFullName:   null);
-
-                discovered.Add(info);
-                AddToMultimap(commandHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
-                continue;
-            }
-
-            // IQueryHandler<TQuery, TResult>
-            if (iQueryHandler is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iQueryHandler))
-            {
-                var msgType    = iface.TypeArguments[0];
-                var resultType = iface.TypeArguments[1];
-                var info = new HandlerInfo(
-                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
-                    HandlerClassName: symbol.Name,
-                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName:  msgType.Name,
-                    Kind:             HandlerKind.Query,
-                    ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
-
-                discovered.Add(info);
-                AddToMultimap(queryHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
-                continue;
-            }
-
-            // INotificationHandler<TNotification>
-            if (iNotificationHandler is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iNotificationHandler))
-            {
-                var msgType = iface.TypeArguments[0];
-                discovered.Add(new HandlerInfo(
-                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
-                    HandlerClassName: symbol.Name,
-                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName:  msgType.Name,
-                    Kind:             HandlerKind.Notification,
-                    ResultFullName:   null));
-                continue;
-            }
-
-            // IStreamQueryHandler<TQuery, TResult>
-            if (iStreamQueryHandler is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iStreamQueryHandler))
-            {
-                var msgType    = iface.TypeArguments[0];
-                var resultType = iface.TypeArguments[1];
-                var info = new HandlerInfo(
-                    HandlerFullName:  symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    HandlerNamespace: symbol.ContainingNamespace.ToDisplayString(),
-                    HandlerClassName: symbol.Name,
-                    MessageFullName:  msgType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName:  msgType.Name,
-                    Kind:             HandlerKind.StreamQuery,
-                    ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
-
-                discovered.Add(info);
-                AddToMultimap(streamQueryHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
-            }
+            (found ??= new List<HandlerInfo>()).Add(
+                new HandlerInfo(
+                    HandlerFullName: handlerName,
+                    MessageFullName: FullName(iface.TypeArguments[0]),
+                    Kind: kind,
+                    ResultFullName: resultName,
+                    Location: location
+                )
+            );
         }
+
+        return found is null ? EquatableArray<HandlerInfo>.Empty : found.ToEquatableArray();
     }
 
-    // -------------------------------------------------------------------------
-    // Message type collection — used for VIT001 (no handler found)
-    // -------------------------------------------------------------------------
-
     /// <summary>
-    /// Inspects <paramref name="symbol"/>'s implemented interfaces and records it
-    /// as a message type if it implements <c>ICommand&lt;T&gt;</c>, <c>ICommand</c>,
-    /// or <c>IQuery&lt;T&gt;</c>. Notifications are excluded — zero handlers is valid
-    /// for notifications.
+    /// Returns <paramref name="symbol"/> as a message type if it implements <c>ICommand&lt;T&gt;</c>,
+    /// <c>ICommand</c>, <c>IQuery&lt;T&gt;</c> or <c>IStreamQuery&lt;T&gt;</c>. Notifications are
+    /// excluded — zero handlers is valid for notifications.
     /// </summary>
-    private static void TryCollectMessageType(
+    private static EquatableArray<MessageTypeInfo> CollectMessageType(
         INamedTypeSymbol symbol,
-        INamedTypeSymbol? iCommand,
-        INamedTypeSymbol? iCommandVoid,
-        INamedTypeSymbol? iQuery,
-        INamedTypeSymbol? iStreamQuery,
-        List<MessageTypeInfo> messageTypes,
-        Location location)
+        WellKnownTypes types,
+        LocationInfo? location
+    )
     {
         // Open generic message types cannot be dispatched (no concrete type to match on).
         if (symbol.IsGenericType)
-            return;
+            return EquatableArray<MessageTypeInfo>.Empty;
 
         foreach (var iface in symbol.AllInterfaces)
         {
             var original = iface.OriginalDefinition;
 
-            // ICommand<TResult> — check before bare ICommand so the more specific match wins
-            if (iCommand is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iCommand))
-            {
-                var resultType = iface.TypeArguments[0];
-                messageTypes.Add(new MessageTypeInfo(
-                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName: symbol.Name,
-                    Kind:            HandlerKind.Command,
-                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location,
-                    BaseTypeFullNames: BaseTypeNames(symbol)));
-                return;
-            }
+            HandlerKind kind;
+            if (Is(original, types.Command))
+                kind = HandlerKind.Command;
+            else if (Is(original, types.Query))
+                kind = HandlerKind.Query;
+            else if (Is(original, types.StreamQuery))
+                kind = HandlerKind.StreamQuery;
+            else if (Is(original, types.CommandVoid))
+                kind = HandlerKind.VoidCommand;
+            else
+                continue;
 
-            // IQuery<TResult>
-            if (iQuery is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iQuery))
+            return new[]
             {
-                var resultType = iface.TypeArguments[0];
-                messageTypes.Add(new MessageTypeInfo(
-                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
+                new MessageTypeInfo(
+                    MessageFullName: FullName(symbol),
                     MessageTypeName: symbol.Name,
-                    Kind:            HandlerKind.Query,
-                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location,
-                    BaseTypeFullNames: BaseTypeNames(symbol)));
-                return;
-            }
-
-            // IStreamQuery<TResult>
-            if (iStreamQuery is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iStreamQuery))
-            {
-                var resultType = iface.TypeArguments[0];
-                messageTypes.Add(new MessageTypeInfo(
-                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName: symbol.Name,
-                    Kind:            HandlerKind.StreamQuery,
-                    ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location,
-                    BaseTypeFullNames: BaseTypeNames(symbol)));
-                return;
-            }
-
-            // ICommand (void) — non-generic, no type arguments
-            if (iCommandVoid is not null &&
-                SymbolEqualityComparer.Default.Equals(original, iCommandVoid) &&
-                iface.TypeArguments.Length == 0)
-            {
-                messageTypes.Add(new MessageTypeInfo(
-                    MessageFullName: symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    MessageTypeName: symbol.Name,
-                    Kind:            HandlerKind.VoidCommand,
-                    ResultFullName:  null,
-                    Location:        location,
-                    BaseTypeFullNames: BaseTypeNames(symbol)));
-                return;
-            }
+                    Kind: kind,
+                    ResultFullName: iface.TypeArguments.Length == 1
+                        ? FullName(iface.TypeArguments[0])
+                        : null,
+                    Location: location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)
+                ),
+            }.ToEquatableArray();
         }
+
+        return EquatableArray<MessageTypeInfo>.Empty;
     }
 
     // -------------------------------------------------------------------------
     // Referenced-assembly scanning (multi-project / DDD support)
     // -------------------------------------------------------------------------
-
-    /// <summary>
-    /// Scans all referenced assemblies that directly reference the Vitreous core package
-    /// and collects any handler implementations and message types found in them.
-    /// </summary>
-    private static void CollectFromReferencedAssemblies(
-        Compilation compilation,
-        INamedTypeSymbol? iCommandHandlerWithResult,
-        INamedTypeSymbol? iCommandHandlerVoid,
-        INamedTypeSymbol? iQueryHandler,
-        INamedTypeSymbol? iNotificationHandler,
-        INamedTypeSymbol? iStreamQueryHandler,
-        INamedTypeSymbol? iCommand,
-        INamedTypeSymbol? iCommandVoidIf,
-        INamedTypeSymbol? iQuery,
-        INamedTypeSymbol? iStreamQuery,
-        List<HandlerInfo> discovered,
-        Dictionary<string, List<HandlerRef>> commandHandlers,
-        Dictionary<string, List<HandlerRef>> queryHandlers,
-        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
-        List<MessageTypeInfo> messageTypes)
-    {
-        foreach (var reference in compilation.References)
-        {
-            if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol asm)
-                continue;
-
-            // Only scan assemblies that directly reference Vitreous — they are the only
-            // ones that can contain handler implementations. This skips the BCL, ASP.NET
-            // Core, and all unrelated NuGet packages automatically.
-            if (!ReferencesVitreous(asm))
-                continue;
-
-            CollectFromNamespace(
-                asm.GlobalNamespace,
-                iCommandHandlerWithResult,
-                iCommandHandlerVoid,
-                iQueryHandler,
-                iNotificationHandler,
-                iStreamQueryHandler,
-                iCommand,
-                iCommandVoidIf,
-                iQuery,
-                iStreamQuery,
-                discovered,
-                commandHandlers,
-                queryHandlers,
-                streamQueryHandlers,
-                messageTypes);
-        }
-    }
 
     /// <summary>
     /// Returns <see langword="true"/> if <paramref name="asm"/> directly references the
@@ -463,70 +424,30 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static bool ReferencesVitreous(IAssemblySymbol asm) =>
         asm.Modules.Any(static m =>
             m.ReferencedAssemblies.Any(static r =>
-                string.Equals(r.Name, "Vitreous", StringComparison.OrdinalIgnoreCase)));
+                string.Equals(r.Name, "Vitreous", StringComparison.OrdinalIgnoreCase)
+            )
+        );
 
-    /// <summary>
-    /// Recursively traverses <paramref name="ns"/> and calls
-    /// <see cref="TryCollectHandler"/> and <see cref="TryCollectMessageType"/>
-    /// for every non-abstract class found.
-    /// </summary>
     private static void CollectFromNamespace(
         INamespaceSymbol ns,
-        INamedTypeSymbol? iCommandHandlerWithResult,
-        INamedTypeSymbol? iCommandHandlerVoid,
-        INamedTypeSymbol? iQueryHandler,
-        INamedTypeSymbol? iNotificationHandler,
-        INamedTypeSymbol? iStreamQueryHandler,
-        INamedTypeSymbol? iCommand,
-        INamedTypeSymbol? iCommandVoidIf,
-        INamedTypeSymbol? iQuery,
-        INamedTypeSymbol? iStreamQuery,
-        List<HandlerInfo> discovered,
-        Dictionary<string, List<HandlerRef>> commandHandlers,
-        Dictionary<string, List<HandlerRef>> queryHandlers,
-        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
-        List<MessageTypeInfo> messageTypes)
+        WellKnownTypes types,
+        List<HandlerInfo> handlers,
+        List<MessageTypeInfo> messages,
+        CancellationToken ct
+    )
     {
         foreach (var member in ns.GetMembers())
         {
+            ct.ThrowIfCancellationRequested();
+
             switch (member)
             {
                 case INamespaceSymbol childNs:
-                    CollectFromNamespace(
-                        childNs,
-                        iCommandHandlerWithResult,
-                        iCommandHandlerVoid,
-                        iQueryHandler,
-                        iNotificationHandler,
-                        iStreamQueryHandler,
-                        iCommand,
-                        iCommandVoidIf,
-                        iQuery,
-                        iStreamQuery,
-                        discovered,
-                        commandHandlers,
-                        queryHandlers,
-                        streamQueryHandlers,
-                        messageTypes);
+                    CollectFromNamespace(childNs, types, handlers, messages, ct);
                     break;
 
                 case INamedTypeSymbol type:
-                    CollectFromType(
-                        type,
-                        iCommandHandlerWithResult,
-                        iCommandHandlerVoid,
-                        iQueryHandler,
-                        iNotificationHandler,
-                        iStreamQueryHandler,
-                        iCommand,
-                        iCommandVoidIf,
-                        iQuery,
-                        iStreamQuery,
-                        discovered,
-                        commandHandlers,
-                        queryHandlers,
-                        streamQueryHandlers,
-                        messageTypes);
+                    CollectFromType(type, types, handlers, messages);
                     break;
             }
         }
@@ -538,20 +459,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     /// </summary>
     private static void CollectFromType(
         INamedTypeSymbol type,
-        INamedTypeSymbol? iCommandHandlerWithResult,
-        INamedTypeSymbol? iCommandHandlerVoid,
-        INamedTypeSymbol? iQueryHandler,
-        INamedTypeSymbol? iNotificationHandler,
-        INamedTypeSymbol? iStreamQueryHandler,
-        INamedTypeSymbol? iCommand,
-        INamedTypeSymbol? iCommandVoidIf,
-        INamedTypeSymbol? iQuery,
-        INamedTypeSymbol? iStreamQuery,
-        List<HandlerInfo> discovered,
-        Dictionary<string, List<HandlerRef>> commandHandlers,
-        Dictionary<string, List<HandlerRef>> queryHandlers,
-        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
-        List<MessageTypeInfo> messageTypes)
+        WellKnownTypes types,
+        List<HandlerInfo> handlers,
+        List<MessageTypeInfo> messages
+    )
     {
         // Only public types can be referenced from the generated code in another assembly.
         if (type.DeclaredAccessibility != Accessibility.Public)
@@ -559,115 +470,99 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         if (!type.IsAbstract && !type.IsGenericType)
         {
+            // Referenced assemblies have no syntax trees, so there is no location.
             if (type.TypeKind == TypeKind.Class)
-            {
-                TryCollectHandler(
-                    type,
-                    iCommandHandlerWithResult,
-                    iCommandHandlerVoid,
-                    iQueryHandler,
-                    iNotificationHandler,
-                    iStreamQueryHandler,
-                    discovered,
-                    commandHandlers,
-                    queryHandlers,
-                    streamQueryHandlers);
-            }
+                handlers.AddRange(CollectHandlers(type, types, location: null));
 
             if (type.TypeKind is TypeKind.Class or TypeKind.Struct)
-            {
-                // Referenced assemblies have no syntax trees — use Location.None
-                TryCollectMessageType(
-                    type,
-                    iCommand,
-                    iCommandVoidIf,
-                    iQuery,
-                    iStreamQuery,
-                    messageTypes,
-                    Location.None);
-            }
+                messages.AddRange(CollectMessageType(type, types, location: null));
         }
 
         foreach (var nested in type.GetTypeMembers())
-        {
-            CollectFromType(
-                nested,
-                iCommandHandlerWithResult,
-                iCommandHandlerVoid,
-                iQueryHandler,
-                iNotificationHandler,
-                iStreamQueryHandler,
-                iCommand,
-                iCommandVoidIf,
-                iQuery,
-                iStreamQuery,
-                discovered,
-                commandHandlers,
-                queryHandlers,
-                streamQueryHandlers,
-                messageTypes);
-        }
+            CollectFromType(nested, types, handlers, messages);
     }
 
     // -------------------------------------------------------------------------
     // Diagnostics
     // -------------------------------------------------------------------------
 
+    private static Dictionary<string, List<HandlerInfo>> GroupByMessage(
+        List<HandlerInfo> handlers,
+        params HandlerKind[] kinds
+    )
+    {
+        var map = new Dictionary<string, List<HandlerInfo>>();
+        foreach (var handler in handlers)
+        {
+            if (Array.IndexOf(kinds, handler.Kind) < 0)
+                continue;
+
+            if (!map.TryGetValue(handler.MessageFullName, out var list))
+                map[handler.MessageFullName] = list = new List<HandlerInfo>();
+            list.Add(handler);
+        }
+        return map;
+    }
+
     /// <summary>
-    /// Emits VIT002 for every message type that has more than one handler registered,
+    /// Adds VIT002 for every message type that has more than one handler registered,
     /// once per handler declared in source (so each one gets a squiggle), or once without
     /// a location when every handler lives in a referenced assembly.
     /// </summary>
-    private static void ReportDuplicateDiagnostics(
-        SourceProductionContext context,
-        Dictionary<string, List<HandlerRef>> handlerMap)
+    private static void AddDuplicateDiagnostics(
+        List<DiagnosticInfo> diagnostics,
+        Dictionary<string, List<HandlerInfo>> handlerMap
+    )
     {
         foreach (var pair in handlerMap)
         {
-            var messageType = pair.Key;
-            var handlers    = pair.Value;
+            var handlers = pair.Value;
             if (handlers.Count <= 1)
                 continue;
 
-            var handlersStr = string.Join(", ", handlers.Select(h => $"'{h.FullName}'"));
-
-            var sourceLocations = handlers
-                .Select(h => h.Location)
-                .Where(l => l.IsInSource)
-                .ToList();
-
-            if (sourceLocations.Count == 0)
-                sourceLocations.Add(Location.None);
-
-            foreach (var location in sourceLocations)
+            var arguments = new[]
             {
-                context.ReportDiagnostic(Diagnostic.Create(
-                    DiagnosticDescriptors.MultipleHandlersFound,
-                    location,
-                    messageType,
-                    handlersStr));
-            }
+                pair.Key,
+                string.Join(", ", handlers.Select(static h => $"'{h.HandlerFullName}'")),
+            }.ToEquatableArray();
+
+            var locations = handlers
+                .Select(static h => h.Location)
+                .Where(static l => l is not null)
+                .ToList();
+            if (locations.Count == 0)
+                locations.Add(null);
+
+            foreach (var location in locations)
+                diagnostics.Add(
+                    new DiagnosticInfo(
+                        DiagnosticDescriptors.MultipleHandlersFound.Id,
+                        location,
+                        arguments
+                    )
+                );
         }
     }
 
     /// <summary>
-    /// Emits VIT001 for every discovered command, query, or stream query that has no
+    /// Adds VIT001 for every discovered command, query, or stream query that has no
     /// corresponding handler. Notifications are excluded — zero notification handlers is valid.
     /// </summary>
-    private static void ReportNoHandlerDiagnostics(
-        SourceProductionContext context,
+    private static void AddNoHandlerDiagnostics(
+        List<DiagnosticInfo> diagnostics,
         List<MessageTypeInfo> messageTypes,
-        Dictionary<string, List<HandlerRef>> commandHandlers,
-        Dictionary<string, List<HandlerRef>> queryHandlers,
-        Dictionary<string, List<HandlerRef>> streamQueryHandlers)
+        Dictionary<string, List<HandlerInfo>> commandHandlers,
+        Dictionary<string, List<HandlerInfo>> queryHandlers,
+        Dictionary<string, List<HandlerInfo>> streamQueryHandlers
+    )
     {
         foreach (var msg in messageTypes)
         {
             var map = msg.Kind switch
             {
-                HandlerKind.Query       => queryHandlers,
+                HandlerKind.Query => queryHandlers,
                 HandlerKind.StreamQuery => streamQueryHandlers,
-                _                       => commandHandlers
+                _ => commandHandlers,
             };
 
             if (map.ContainsKey(msg.MessageFullName))
@@ -679,18 +574,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
             var handlerKindWord = msg.Kind switch
             {
-                HandlerKind.Query       => "Query",
+                HandlerKind.Query => "Query",
                 HandlerKind.StreamQuery => "StreamQuery",
-                _                       => "Command"
+                _ => "Command",
             };
             var resultSuffix = msg.ResultFullName is not null ? $", {msg.ResultFullName}" : "";
 
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.NoHandlerFound,
-                msg.Location,
-                msg.MessageTypeName,
-                handlerKindWord,
-                resultSuffix));
+            diagnostics.Add(
+                new DiagnosticInfo(
+                    DiagnosticDescriptors.NoHandlerFound.Id,
+                    msg.Location,
+                    new[] { msg.MessageTypeName, handlerKindWord, resultSuffix }.ToEquatableArray()
+                )
+            );
         }
     }
 
@@ -699,63 +595,85 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     /// <c>IAsyncEnumerable&lt;T&gt;</c> and accepts a <c>CancellationToken</c> parameter
     /// decorates that parameter with <c>[EnumeratorCancellation]</c>.
     /// </summary>
-    private static void CheckEnumeratorCancellation(
+    private static EquatableArray<DiagnosticInfo> CheckEnumeratorCancellation(
         INamedTypeSymbol symbol,
-        INamedTypeSymbol iStreamQueryHandler,
-        INamedTypeSymbol enumeratorCancellationAttr,
-        Compilation compilation,
-        SourceProductionContext context,
-        TypeDeclarationSyntax classDecl)
+        WellKnownTypes types
+    )
     {
+        if (
+            types.StreamQueryHandler is null
+            || types.EnumeratorCancellationAttribute is null
+            || types.CancellationToken is null
+        )
+        {
+            return EquatableArray<DiagnosticInfo>.Empty;
+        }
+
         // Only check classes that implement IStreamQueryHandler<,>
-        var implementsStreamHandler = symbol.AllInterfaces.Any(iface =>
-            SymbolEqualityComparer.Default.Equals(iface.OriginalDefinition, iStreamQueryHandler));
+        if (
+            !symbol.AllInterfaces.Any(iface =>
+                Is(iface.OriginalDefinition, types.StreamQueryHandler)
+            )
+        )
+            return EquatableArray<DiagnosticInfo>.Empty;
 
-        if (!implementsStreamHandler) return;
+        List<DiagnosticInfo>? found = null;
 
-        var cancellationTokenType = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
-        if (cancellationTokenType is null) return;
-
-        // Inspect every method that returns IAsyncEnumerable<T>
         foreach (var member in symbol.GetMembers().OfType<IMethodSymbol>())
         {
-            if (member.ReturnType is not INamedTypeSymbol returnType) continue;
+            if (member.ReturnType is not INamedTypeSymbol returnType)
+                continue;
 
-            // Check if return type is IAsyncEnumerable<T> (original definition = IAsyncEnumerable`1)
-            var isAsyncEnumerable = returnType.OriginalDefinition.ToDisplayString() ==
-                "System.Collections.Generic.IAsyncEnumerable<T>";
-            if (!isAsyncEnumerable) continue;
+            var isAsyncEnumerable =
+                returnType.OriginalDefinition.ToDisplayString()
+                == "System.Collections.Generic.IAsyncEnumerable<T>";
+            if (!isAsyncEnumerable)
+                continue;
 
             // [EnumeratorCancellation] only has an effect on async iterators. On any other
             // method the compiler reports CS8424, so requiring it there would be unfixable.
-            if (!IsAsyncIterator(member)) continue;
+            if (!IsAsyncIterator(member))
+                continue;
 
-            // Find a CancellationToken parameter missing [EnumeratorCancellation]
             foreach (var param in member.Parameters)
             {
-                if (!SymbolEqualityComparer.Default.Equals(param.Type, cancellationTokenType))
+                if (!SymbolEqualityComparer.Default.Equals(param.Type, types.CancellationToken))
                     continue;
 
-                var hasAttr = param.GetAttributes().Any(a =>
-                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, enumeratorCancellationAttr));
+                var hasAttr = param
+                    .GetAttributes()
+                    .Any(a =>
+                        SymbolEqualityComparer.Default.Equals(
+                            a.AttributeClass,
+                            types.EnumeratorCancellationAttribute
+                        )
+                    );
 
                 if (!hasAttr)
                 {
-                    // Find the method location in the syntax tree for a precise squiggle
-                    var methodLocation = member.Locations.FirstOrDefault() ?? classDecl.GetLocation();
-                    context.ReportDiagnostic(Diagnostic.Create(
-                        DiagnosticDescriptors.MissingEnumeratorCancellation,
-                        methodLocation,
-                        member.Name,
-                        symbol.Name));
+                    (found ??= new List<DiagnosticInfo>()).Add(
+                        new DiagnosticInfo(
+                            DiagnosticDescriptors.MissingEnumeratorCancellation.Id,
+                            LocationInfo.From(member.Locations.FirstOrDefault()),
+                            new[] { member.Name, symbol.Name }.ToEquatableArray()
+                        )
+                    );
                 }
             }
         }
+
+        return found is null ? EquatableArray<DiagnosticInfo>.Empty : found.ToEquatableArray();
     }
 
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    private static bool Is(INamedTypeSymbol candidate, INamedTypeSymbol? wellKnown) =>
+        wellKnown is not null && SymbolEqualityComparer.Default.Equals(candidate, wellKnown);
+
+    private static string FullName(ITypeSymbol symbol) =>
+        symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", "");
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="symbol"/> and all of its containing
@@ -771,31 +689,22 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         return true;
     }
 
-    private static void AddToMultimap(
-        Dictionary<string, List<HandlerRef>> map,
-        string key,
-        HandlerRef value)
-    {
-        if (!map.TryGetValue(key, out var list))
-            map[key] = list = new List<HandlerRef>();
-        list.Add(value);
-    }
-
     /// <summary>Fully-qualified names of the base classes of <paramref name="symbol"/>, nearest first.</summary>
-    private static IReadOnlyList<string> BaseTypeNames(INamedTypeSymbol symbol)
+    private static EquatableArray<string> BaseTypeNames(INamedTypeSymbol symbol)
     {
         var names = new List<string>();
-        for (var t = symbol.BaseType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
-            names.Add(t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
-        return names;
+        for (
+            var t = symbol.BaseType;
+            t is not null && t.SpecialType != SpecialType.System_Object;
+            t = t.BaseType
+        )
+            names.Add(FullName(t));
+        return names.ToEquatableArray();
     }
 
-    /// <summary>The first source location of <paramref name="symbol"/>, or <see cref="Location.None"/>.</summary>
-    private static Location SourceLocation(ISymbol symbol) =>
-        symbol.Locations.FirstOrDefault(static l => l.IsInSource) ?? Location.None;
-
-    /// <summary>A handler registered for a message, used for VIT001/VIT002 bookkeeping.</summary>
-    private readonly record struct HandlerRef(string FullName, Location Location);
+    /// <summary>The first source location of <paramref name="symbol"/>, or <see langword="null"/>.</summary>
+    private static Location? SourceLocation(ISymbol symbol) =>
+        symbol.Locations.FirstOrDefault(static l => l.IsInSource);
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="method"/> is declared in source as an
@@ -809,9 +718,11 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         foreach (var reference in method.DeclaringSyntaxReferences)
         {
-            var yields = reference.GetSyntax()
+            var yields = reference
+                .GetSyntax()
                 .DescendantNodes(static n =>
-                    n is not LocalFunctionStatementSyntax and not AnonymousFunctionExpressionSyntax)
+                    n is not LocalFunctionStatementSyntax and not AnonymousFunctionExpressionSyntax
+                )
                 .OfType<YieldStatementSyntax>();
 
             if (yields.Any())

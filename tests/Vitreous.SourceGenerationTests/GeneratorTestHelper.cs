@@ -133,6 +133,17 @@ internal static class GeneratorTestHelper
     }
 
     /// <summary>
+    /// Creates a compilation of <paramref name="sources"/> (one syntax tree each, named
+    /// <c>File0.cs</c>, <c>File1.cs</c>, …) with the standard Vitreous references.
+    /// </summary>
+    internal static CSharpCompilation CreateCompilation(params string[] sources) =>
+        CSharpCompilation.Create(
+            "TestAssembly",
+            syntaxTrees: sources.Select(static (s, i) => CSharpSyntaxTree.ParseText(s, path: $"File{i}.cs")),
+            references: s_defaultRefs.Value,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+    /// <summary>
     /// Runs the generator over <paramref name="source"/> (compiled as <paramref name="assemblyName"/>
     /// with any <paramref name="extraReferences"/>) and returns the updated compilation together with
     /// every error: generator diagnostics and C# compiler errors alike.
