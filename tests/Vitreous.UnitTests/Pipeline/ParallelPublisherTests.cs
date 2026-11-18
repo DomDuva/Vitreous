@@ -141,6 +141,76 @@ public sealed class ParallelPublisherTests
             .And.AllSatisfy(e => e.Should().BeOfType<InvalidOperationException>());
     }
 
+    [Fact]
+    public async Task Publish_HandlersOnlyCanceled_ThrowsOperationCanceled_NotNullReference()
+    {
+        var provider = BuildProvider(s =>
+        {
+            s.AddSingleton<INotificationHandler<TestNotification>>(
+                new FuncHandler((_, _) => ValueTask.FromCanceled(new CancellationToken(true))));
+            s.AddSingleton<INotificationHandler<TestNotification>>(
+                new FuncHandler(async (_, _) => { await Task.Yield(); throw new OperationCanceledException(); }));
+        });
+
+        var publisher = provider.GetRequiredService<ParallelPublisher>();
+        Func<Task> act = () => publisher.Publish(new TestNotification(1)).AsTask();
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    [Fact]
+    public async Task Publish_FailureAndCancellation_FailureWins()
+    {
+        var provider = BuildProvider(s =>
+        {
+            s.AddSingleton<INotificationHandler<TestNotification>>(
+                new FuncHandler((_, _) => ValueTask.FromCanceled(new CancellationToken(true))));
+            s.AddSingleton<INotificationHandler<TestNotification>>(new ThrowingHandler());
+        });
+
+        var publisher = provider.GetRequiredService<ParallelPublisher>();
+        Func<Task> act = () => publisher.Publish(new TestNotification(1)).AsTask();
+
+        (await act.Should().ThrowAsync<AggregateException>())
+            .Which.InnerExceptions.Should().ContainSingle().Which.Should().BeOfType<InvalidOperationException>();
+    }
+
+    [Fact]
+    public async Task Publish_HandlerThrowsSynchronously_OtherHandlersStillRun()
+    {
+        var received = new List<int>();
+        var provider = BuildProvider(s =>
+        {
+            s.AddSingleton<INotificationHandler<TestNotification>>(
+                new FuncHandler((_, _) => throw new InvalidOperationException("sync failure")));
+            s.AddSingleton<INotificationHandler<TestNotification>>(new CaptureHandler(received));
+        });
+
+        var publisher = provider.GetRequiredService<ParallelPublisher>();
+        Func<Task> act = () => publisher.Publish(new TestNotification(7)).AsTask();
+
+        (await act.Should().ThrowAsync<AggregateException>())
+            .Which.InnerExceptions.Should().ContainSingle().Which.Message.Should().Be("sync failure");
+        received.Should().ContainSingle().Which.Should().Be(7);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task Publish_SingleHandlerThrows_AggregateException_LikeMultipleHandlers(bool synchronous)
+    {
+        var provider = BuildProvider(s =>
+            s.AddSingleton<INotificationHandler<TestNotification>>(synchronous
+                ? new FuncHandler((_, _) => throw new InvalidOperationException("single"))
+                : new FuncHandler(async (_, _) => { await Task.Yield(); throw new InvalidOperationException("single"); })));
+
+        var publisher = provider.GetRequiredService<ParallelPublisher>();
+        Func<Task> act = () => publisher.Publish(new TestNotification(1)).AsTask();
+
+        (await act.Should().ThrowAsync<AggregateException>())
+            .Which.InnerExceptions.Should().ContainSingle().Which.Message.Should().Be("single");
+    }
+
     // ── Notification pipeline behaviors ───────────────────────────────────────
 
     [Fact]

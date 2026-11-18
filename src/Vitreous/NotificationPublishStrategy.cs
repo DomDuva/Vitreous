@@ -16,7 +16,9 @@ public enum NotificationPublishStrategy
     /// <summary>
     /// All handlers are started concurrently via <see cref="Task.WhenAll"/>.
     /// Every handler runs to completion regardless of individual failures;
-    /// all exceptions are collected and re-thrown as an <see cref="AggregateException"/>.
+    /// all exceptions are collected and re-thrown as an <see cref="AggregateException"/>
+    /// (also when only one handler is registered). If handlers were only canceled, an
+    /// <see cref="OperationCanceledException"/> is thrown instead.
     /// </summary>
     /// <remarks>
     /// Handlers that share mutable scoped services (e.g. a <c>DbContext</c> injected
