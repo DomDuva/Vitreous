@@ -535,7 +535,7 @@ All factory methods accept an optional `code` override to replace the default co
 `Vitreous.SourceGeneration` is a build-time Roslyn incremental generator referenced as `PrivateAssets="all"` — it produces no runtime dependency. It scans your project's compilation and emits:
 
 - **`VitreousServiceCollectionExtensions.g.cs`** — the `AddVitreousHandlers()` extension method that registers every discovered handler and replaces the reflection-based sender with the generated dispatcher.
-- **`VitreousDispatcher.g.cs`** — a concrete `ISender` / `IPublisher` implementation that dispatches via `if/else` chains on concrete types with no reflection.
+- **`VitreousDispatcher.g.cs`** — an internal `ISender` / `IPublisher` implementation that dispatches with one lookup on the message's concrete type, with no reflection. A message type without its own handler falls back to the nearest base type that has one.
 
 No attributes, no startup overhead. The generator runs during `dotnet build` and produces errors or warnings in your IDE when handler contracts are violated.
 
@@ -547,7 +547,7 @@ Handlers and messages may be classes, records, or record structs, and may be nes
 |---|---|---|
 | `VIT001` | Warning | A command, query, or stream query has no registered handler |
 | `VIT002` | Error | A command, query, or stream query has more than one handler |
-| `VIT003` | Warning | A `IAsyncEnumerable`-returning method inside a stream query handler is missing `[EnumeratorCancellation]` on its `CancellationToken` parameter — callers using `.WithCancellation(ct)` will not be able to cancel mid-stream |
+| `VIT003` | Warning | An async iterator returning `IAsyncEnumerable` inside a stream query handler is missing `[EnumeratorCancellation]` on its `CancellationToken` parameter — callers using `.WithCancellation(ct)` will not be able to cancel mid-stream |
 
 #### Multi-project solutions (DDD, Clean Architecture)
 
@@ -577,7 +577,7 @@ dotnet add package Vitreous.SourceGeneration
 builder.Services.AddVitreousHandlers();
 ```
 
-> **Important:** install `Vitreous.SourceGeneration` **only on the entry-point project** (the one that contains `Program.cs` and calls `AddVitreousHandlers()`). Installing it on handler projects is unnecessary and causes a `VitreousDispatcher` naming conflict.
+> **Tip:** install `Vitreous.SourceGeneration` on the entry-point project (the one that contains `Program.cs` and calls `AddVitreousHandlers()`). Handler projects don't need it. The generated types are `internal`, so a test project that also installs it gets its own registrations without conflicting.
 
 ---
 
@@ -886,9 +886,6 @@ A command, query, or stream query has no handler in the compilation or any refer
 
 **`VIT002: Multiple handlers found for 'X'`**
 Commands and queries must have exactly one handler. If you need fan-out, use a notification instead.
-
-**`The type 'VitreousDispatcher' exists in both ...`**
-`Vitreous.SourceGeneration` is installed on more than one project in the dependency graph. Keep it only on the entry-point project; class-library projects need just `Vitreous`.
 
 **`Cannot resolve scoped service 'ISender' from root provider`**
 Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies.

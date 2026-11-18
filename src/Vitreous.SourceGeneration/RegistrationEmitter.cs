@@ -29,7 +29,9 @@ internal static class RegistrationEmitter
         // Deliberately NOT named VitreousServiceCollectionExtensions: a type with the same
         // fully-qualified name as the one in the core assembly would trigger CS0436 whenever
         // either is referenced by name. The extension method itself is what users call.
-        sb.AppendLine("public static class VitreousGeneratedServiceCollectionExtensions");
+        // Internal so that a project referencing another project that also runs the generator
+        // doesn't see two AddVitreousHandlers() overloads (CS0121) or two dispatchers (CS0436).
+        sb.AppendLine("internal static class VitreousGeneratedServiceCollectionExtensions");
         sb.AppendLine("{");
         sb.AppendLine("    /// <summary>");
         sb.AppendLine("    /// Registers all source-generated Vitreous handlers and the concrete dispatcher.");
@@ -86,6 +88,9 @@ internal static class RegistrationEmitter
         sb.AppendLine();
         // Explicit usings: the consuming project may have ImplicitUsings disabled.
         sb.AppendLine("using System;");
+        sb.AppendLine("using System.Collections.Concurrent;");
+        sb.AppendLine("using System.Collections.Frozen;");
+        sb.AppendLine("using System.Collections.Generic;");
         sb.AppendLine("using System.Threading;");
         sb.AppendLine("using System.Threading.Tasks;");
         sb.AppendLine("using Microsoft.Extensions.DependencyInjection;");
@@ -96,9 +101,34 @@ internal static class RegistrationEmitter
         sb.AppendLine();
         sb.AppendLine("/// <summary>");
         sb.AppendLine("/// Source-generated dispatcher — zero reflection, fully AOT-compatible.");
+        sb.AppendLine("/// Each message kind has a frozen map from the concrete message type to a typed invoker,");
+        sb.AppendLine("/// so dispatch is one lookup on <c>GetType()</c> with no boxing and no async state machine.");
         sb.AppendLine("/// </summary>");
-        sb.AppendLine("public sealed class VitreousDispatcher : ISender, IPublisher");
+        // Internal: a project that references another project which also runs the generator
+        // would otherwise see two public VitreousDispatcher / AddVitreousHandlers definitions.
+        sb.AppendLine("internal sealed class VitreousDispatcher : ISender, IPublisher");
         sb.AppendLine("{");
+
+        EmitInvokerMap(sb, "s_commands", handlers, HandlerKind.Command, h =>
+            $"(Func<IServiceProvider, ICommand<{h.ResultFullName}>, CancellationToken, ValueTask<Result<{h.ResultFullName}>>>)" +
+            $"(static (sp, m, ct) => ExecuteCommand<{h.MessageFullName}, {h.ResultFullName}>(sp, ({h.MessageFullName})m, ct))");
+        EmitInvokerMap(sb, "s_voidCommands", handlers, HandlerKind.VoidCommand, h =>
+            $"(Func<IServiceProvider, ICommand, CancellationToken, ValueTask<Result>>)" +
+            $"(static (sp, m, ct) => ExecuteVoidCommand<{h.MessageFullName}>(sp, ({h.MessageFullName})m, ct))");
+        EmitInvokerMap(sb, "s_queries", handlers, HandlerKind.Query, h =>
+            $"(Func<IServiceProvider, IQuery<{h.ResultFullName}>, CancellationToken, ValueTask<Result<{h.ResultFullName}>>>)" +
+            $"(static (sp, m, ct) => ExecuteQuery<{h.MessageFullName}, {h.ResultFullName}>(sp, ({h.MessageFullName})m, ct))");
+        EmitInvokerMap(sb, "s_streamQueries", handlers, HandlerKind.StreamQuery, h =>
+            $"(Func<IServiceProvider, IStreamQuery<{h.ResultFullName}>, CancellationToken, ValueTask<Result<IAsyncEnumerable<{h.ResultFullName}>>>>)" +
+            $"(static (sp, m, ct) => ExecuteStreamQuery<{h.MessageFullName}, {h.ResultFullName}>(sp, ({h.MessageFullName})m, ct))");
+
+        sb.AppendLine("    // Runtime types with no handler of their own, resolved once to the nearest base type");
+        sb.AppendLine("    // that has one (or null). Exact-type matches never reach these caches.");
+        sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedCommands = new();");
+        sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedVoidCommands = new();");
+        sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedQueries = new();");
+        sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedStreamQueries = new();");
+        sb.AppendLine();
         sb.AppendLine("    private readonly IServiceProvider _services;");
         sb.AppendLine("    private readonly bool _parallelPublish;");
         sb.AppendLine();
@@ -109,236 +139,143 @@ internal static class RegistrationEmitter
         sb.AppendLine("    }");
         sb.AppendLine();
 
-        // ISender.Send<TResult>(ICommand<TResult>) — dispatches by concrete type
-        EmitCommandWithResultSend(sb, handlers);
+        sb.AppendLine("""
+                /// <inheritdoc/>
+                public ValueTask<Result<TResult>> Send<TResult>(ICommand<TResult> command, CancellationToken ct = default)
+                {
+                    ArgumentNullException.ThrowIfNull(command);
+                    if (Find(s_commands, s_derivedCommands, command.GetType())
+                        is Func<IServiceProvider, ICommand<TResult>, CancellationToken, ValueTask<Result<TResult>>> invoker)
+                        return invoker(_services, command, ct);
+                    throw NoHandler("command", command.GetType());
+                }
 
-        // ISender.Send(ICommand) — dispatches by concrete type (void commands)
-        EmitVoidCommandSend(sb, handlers);
+                /// <inheritdoc/>
+                public ValueTask<Result> Send(ICommand command, CancellationToken ct = default)
+                {
+                    ArgumentNullException.ThrowIfNull(command);
+                    if (Find(s_voidCommands, s_derivedVoidCommands, command.GetType())
+                        is Func<IServiceProvider, ICommand, CancellationToken, ValueTask<Result>> invoker)
+                        return invoker(_services, command, ct);
+                    throw NoHandler("command", command.GetType());
+                }
 
-        // ISender.Send<TResult>(IQuery<TResult>)
-        EmitQuerySend(sb, handlers);
+                /// <inheritdoc/>
+                public ValueTask<Result<TResult>> Send<TResult>(IQuery<TResult> query, CancellationToken ct = default)
+                {
+                    ArgumentNullException.ThrowIfNull(query);
+                    if (Find(s_queries, s_derivedQueries, query.GetType())
+                        is Func<IServiceProvider, IQuery<TResult>, CancellationToken, ValueTask<Result<TResult>>> invoker)
+                        return invoker(_services, query, ct);
+                    throw NoHandler("query", query.GetType());
+                }
 
-        // ISender.CreateStream<TResult>(IStreamQuery<TResult>)
-        EmitStreamQueryCreateStream(sb, handlers);
+                /// <inheritdoc/>
+                public ValueTask<Result<IAsyncEnumerable<TResult>>> CreateStream<TResult>(IStreamQuery<TResult> query, CancellationToken ct = default)
+                {
+                    ArgumentNullException.ThrowIfNull(query);
+                    if (Find(s_streamQueries, s_derivedStreamQueries, query.GetType())
+                        is Func<IServiceProvider, IStreamQuery<TResult>, CancellationToken, ValueTask<Result<IAsyncEnumerable<TResult>>>> invoker)
+                        return invoker(_services, query, ct);
+                    throw NoHandler("stream query", query.GetType());
+                }
 
-        // IPublisher.Publish<TNotification>
-        EmitPublish(sb, handlers);
+                /// <inheritdoc/>
+                public ValueTask Publish<TNotification>(TNotification notification, CancellationToken ct = default)
+                    where TNotification : INotification
+                {
+                    // IPublisher is registered as this dispatcher, so resolve the concrete publisher
+                    // chosen by VitreousOptions by type to avoid calling ourselves.
+                    IPublisher publisher = _parallelPublish
+                        ? _services.GetRequiredService<ParallelPublisher>()
+                        : _services.GetRequiredService<SequentialPublisher>();
+                    return publisher.Publish(notification, ct);
+                }
 
+                private static Delegate? Find(
+                    FrozenDictionary<Type, Delegate> map,
+                    ConcurrentDictionary<Type, Delegate?> derived,
+                    Type messageType)
+                {
+                    // Exact type first, so a derived message with its own handler always gets it.
+                    if (map.TryGetValue(messageType, out var invoker))
+                        return invoker;
+
+                    return derived.GetOrAdd(messageType, static (type, m) =>
+                    {
+                        for (var t = type.BaseType; t is not null; t = t.BaseType)
+                        {
+                            if (m.TryGetValue(t, out var baseInvoker))
+                                return baseInvoker;
+                        }
+                        return null;
+                    }, map);
+                }
+
+                private static InvalidOperationException NoHandler(string kind, Type messageType) =>
+                    new($"No handler registered for {kind} '{messageType.Name}'.");
+
+                private static ValueTask<Result<TResult>> ExecuteCommand<TCommand, TResult>(
+                    IServiceProvider services, TCommand command, CancellationToken ct)
+                    where TCommand : ICommand<TResult>
+                {
+                    var handler = services.GetRequiredService<ICommandHandler<TCommand, TResult>>();
+                    var behaviors = services.GetServices<IPipelineBehavior<TCommand, TResult>>();
+                    MessageHandlerDelegate<TCommand, TResult> terminal = handler.Handle;
+                    return PipelineExecutor.Execute(command, terminal, behaviors, ct);
+                }
+
+                private static ValueTask<Result> ExecuteVoidCommand<TCommand>(
+                    IServiceProvider services, TCommand command, CancellationToken ct)
+                    where TCommand : ICommand
+                {
+                    var handler = services.GetRequiredService<ICommandHandler<TCommand>>();
+                    var behaviors = services.GetServices<IPipelineBehavior<TCommand, Unit>>();
+                    CommandHandlerDelegate<TCommand> terminal = handler.Handle;
+                    return PipelineExecutor.ExecuteVoid(command, terminal, behaviors, ct);
+                }
+
+                private static ValueTask<Result<TResult>> ExecuteQuery<TQuery, TResult>(
+                    IServiceProvider services, TQuery query, CancellationToken ct)
+                    where TQuery : IQuery<TResult>
+                {
+                    var handler = services.GetRequiredService<IQueryHandler<TQuery, TResult>>();
+                    var behaviors = services.GetServices<IPipelineBehavior<TQuery, TResult>>();
+                    MessageHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
+                    return PipelineExecutor.Execute(query, terminal, behaviors, ct);
+                }
+
+                private static ValueTask<Result<IAsyncEnumerable<TResult>>> ExecuteStreamQuery<TQuery, TResult>(
+                    IServiceProvider services, TQuery query, CancellationToken ct)
+                    where TQuery : IStreamQuery<TResult>
+                {
+                    var handler = services.GetRequiredService<IStreamQueryHandler<TQuery, TResult>>();
+                    var behaviors = services.GetServices<IStreamPipelineBehavior<TQuery, TResult>>();
+                    StreamQueryHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
+                    return PipelineExecutor.ExecuteStream(query, terminal, behaviors, ct);
+                }
+            """);
         sb.AppendLine("}");
 
         return sb.ToString();
     }
 
-    // -------------------------------------------------------------------------
-    // Send<TResult>(ICommand<TResult>)
-    // -------------------------------------------------------------------------
-
-    private static void EmitCommandWithResultSend(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
+    /// <summary>
+    /// Emits a <c>FrozenDictionary&lt;Type, Delegate&gt;</c> mapping each concrete message type of
+    /// <paramref name="kind"/> to its typed invoker. Invokers are static lambdas (no closures).
+    /// </summary>
+    private static void EmitInvokerMap(
+        StringBuilder sb,
+        string fieldName,
+        IReadOnlyList<HandlerInfo> handlers,
+        HandlerKind kind,
+        Func<HandlerInfo, string> invoker)
     {
-        var commands = handlers.Where(h => h.Kind == HandlerKind.Command).ToList();
-
-        sb.AppendLine("    /// <inheritdoc/>");
-        sb.AppendLine("    public async ValueTask<Result<TResult>> Send<TResult>(");
-        sb.AppendLine("        ICommand<TResult> command,");
-        sb.AppendLine("        CancellationToken ct = default)");
+        sb.AppendLine($"    private static readonly FrozenDictionary<Type, Delegate> {fieldName} = new Dictionary<Type, Delegate>");
         sb.AppendLine("    {");
-
-        if (commands.Count == 0)
-        {
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for command '{command.GetType().Name}'.\");");
-        }
-        else
-        {
-            // Use if/else chain — switch can't unify different ValueTask<Result<T>> types
-            for (var i = 0; i < commands.Count; i++)
-            {
-                var h = commands[i];
-                sb.AppendLine($"        if (command is {h.MessageFullName} __c{i})");
-                sb.AppendLine($"            return (Result<TResult>)(object)await ExecuteCommand<{h.MessageFullName}, {h.ResultFullName}>(__c{i}, ct);");
-            }
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for command '{command.GetType().Name}'.\");");
-        }
-
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        // Helper method
-        sb.AppendLine("    private ValueTask<Result<TResult>> ExecuteCommand<TCommand, TResult>(");
-        sb.AppendLine("        TCommand command, CancellationToken ct)");
-        sb.AppendLine("        where TCommand : ICommand<TResult>");
-        sb.AppendLine("    {");
-        sb.AppendLine("        var handler = _services.GetRequiredService<ICommandHandler<TCommand, TResult>>();");
-        sb.AppendLine("        var behaviors = _services.GetServices<IPipelineBehavior<TCommand, TResult>>();");
-        sb.AppendLine("        MessageHandlerDelegate<TCommand, TResult> terminal = handler.Handle;");
-        sb.AppendLine("        return PipelineExecutor.Execute(command, terminal, behaviors, ct);");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-    }
-
-    // -------------------------------------------------------------------------
-    // Send(ICommand) — void commands
-    // -------------------------------------------------------------------------
-
-    private static void EmitVoidCommandSend(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
-    {
-        var voidCommands = handlers.Where(h => h.Kind == HandlerKind.VoidCommand).ToList();
-
-        sb.AppendLine("    /// <inheritdoc/>");
-        sb.AppendLine("    public async ValueTask<Result> Send(ICommand command, CancellationToken ct = default)");
-        sb.AppendLine("    {");
-
-        if (voidCommands.Count == 0)
-        {
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for command '{command.GetType().Name}'.\");");
-        }
-        else
-        {
-            for (var i = 0; i < voidCommands.Count; i++)
-            {
-                var h = voidCommands[i];
-                sb.AppendLine($"        if (command is {h.MessageFullName} __vc{i})");
-                sb.AppendLine($"            return await ExecuteVoidCommand<{h.MessageFullName}>(__vc{i}, ct);");
-            }
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for command '{command.GetType().Name}'.\");");
-        }
-
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        sb.AppendLine("    private ValueTask<Result> ExecuteVoidCommand<TCommand>(");
-        sb.AppendLine("        TCommand command, CancellationToken ct)");
-        sb.AppendLine("        where TCommand : ICommand");
-        sb.AppendLine("    {");
-        sb.AppendLine("        var handler = _services.GetRequiredService<ICommandHandler<TCommand>>();");
-        sb.AppendLine("        var behaviors = _services.GetServices<IPipelineBehavior<TCommand, Unit>>();");
-        sb.AppendLine("        CommandHandlerDelegate<TCommand> terminal = handler.Handle;");
-        sb.AppendLine("        return PipelineExecutor.ExecuteVoid(command, terminal, behaviors, ct);");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-    }
-
-    // -------------------------------------------------------------------------
-    // Send<TResult>(IQuery<TResult>)
-    // -------------------------------------------------------------------------
-
-    private static void EmitQuerySend(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
-    {
-        var queries = handlers.Where(h => h.Kind == HandlerKind.Query).ToList();
-
-        sb.AppendLine("    /// <inheritdoc/>");
-        sb.AppendLine("    public async ValueTask<Result<TResult>> Send<TResult>(");
-        sb.AppendLine("        IQuery<TResult> query,");
-        sb.AppendLine("        CancellationToken ct = default)");
-        sb.AppendLine("    {");
-
-        if (queries.Count == 0)
-        {
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for query '{query.GetType().Name}'.\");");
-        }
-        else
-        {
-            for (var i = 0; i < queries.Count; i++)
-            {
-                var h = queries[i];
-                sb.AppendLine($"        if (query is {h.MessageFullName} __q{i})");
-                sb.AppendLine($"            return (Result<TResult>)(object)await ExecuteQuery<{h.MessageFullName}, {h.ResultFullName}>(__q{i}, ct);");
-            }
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for query '{query.GetType().Name}'.\");");
-        }
-
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        sb.AppendLine("    private ValueTask<Result<TResult>> ExecuteQuery<TQuery, TResult>(");
-        sb.AppendLine("        TQuery query, CancellationToken ct)");
-        sb.AppendLine("        where TQuery : IQuery<TResult>");
-        sb.AppendLine("    {");
-        sb.AppendLine("        var handler = _services.GetRequiredService<IQueryHandler<TQuery, TResult>>();");
-        sb.AppendLine("        var behaviors = _services.GetServices<IPipelineBehavior<TQuery, TResult>>();");
-        sb.AppendLine("        MessageHandlerDelegate<TQuery, TResult> terminal = handler.Handle;");
-        sb.AppendLine("        return PipelineExecutor.Execute(query, terminal, behaviors, ct);");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-    }
-
-    // -------------------------------------------------------------------------
-    // CreateStream<TResult>(IStreamQuery<TResult>)
-    // -------------------------------------------------------------------------
-
-    private static void EmitStreamQueryCreateStream(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
-    {
-        var streamQueries = handlers.Where(h => h.Kind == HandlerKind.StreamQuery).ToList();
-
-        sb.AppendLine("    /// <inheritdoc/>");
-        sb.AppendLine("    public async ValueTask<Result<System.Collections.Generic.IAsyncEnumerable<TResult>>> CreateStream<TResult>(");
-        sb.AppendLine("        IStreamQuery<TResult> query,");
-        sb.AppendLine("        CancellationToken ct = default)");
-        sb.AppendLine("    {");
-
-        if (streamQueries.Count == 0)
-        {
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for stream query '{query.GetType().Name}'.\");");
-        }
-        else
-        {
-            for (var i = 0; i < streamQueries.Count; i++)
-            {
-                var h = streamQueries[i];
-                sb.AppendLine($"        if (query is {h.MessageFullName} __sq{i})");
-                sb.AppendLine($"            return (Result<System.Collections.Generic.IAsyncEnumerable<TResult>>)(object)await ExecuteStreamQuery<{h.MessageFullName}, {h.ResultFullName}>(__sq{i}, ct);");
-            }
-            sb.AppendLine("        throw new InvalidOperationException(");
-            sb.AppendLine("            $\"No handler registered for stream query '{query.GetType().Name}'.\");");
-        }
-
-        sb.AppendLine("    }");
-        sb.AppendLine();
-
-        sb.AppendLine("    private ValueTask<Result<System.Collections.Generic.IAsyncEnumerable<TResult>>> ExecuteStreamQuery<TQuery, TResult>(");
-        sb.AppendLine("        TQuery query, CancellationToken ct)");
-        sb.AppendLine("        where TQuery : IStreamQuery<TResult>");
-        sb.AppendLine("    {");
-        sb.AppendLine("        var handler = _services.GetRequiredService<IStreamQueryHandler<TQuery, TResult>>();");
-        sb.AppendLine("        var behaviors = _services.GetServices<IStreamPipelineBehavior<TQuery, TResult>>();");
-        sb.AppendLine("        StreamQueryHandlerDelegate<TQuery, TResult> terminal = handler.Handle;");
-        sb.AppendLine("        return PipelineExecutor.ExecuteStream(query, terminal, behaviors, ct);");
-        sb.AppendLine("    }");
-        sb.AppendLine();
-    }
-
-    // -------------------------------------------------------------------------
-    // Publish<TNotification>
-    // -------------------------------------------------------------------------
-
-    private static void EmitPublish(StringBuilder sb, IReadOnlyList<HandlerInfo> handlers)
-    {
-        sb.AppendLine("    /// <inheritdoc/>");
-        sb.AppendLine("    public ValueTask Publish<TNotification>(");
-        sb.AppendLine("        TNotification notification,");
-        sb.AppendLine("        CancellationToken ct = default)");
-        sb.AppendLine("        where TNotification : INotification");
-        sb.AppendLine("    {");
-        sb.AppendLine("        // Delegate to the concrete publisher chosen by VitreousOptions.");
-        sb.AppendLine("        // IPublisher is registered as VitreousDispatcher itself, so we");
-        sb.AppendLine("        // resolve the concrete publisher by type to avoid circular calls.");
-        sb.AppendLine("        if (_parallelPublish)");
-        sb.AppendLine("        {");
-        sb.AppendLine("            var publisher = _services.GetRequiredService<ParallelPublisher>();");
-        sb.AppendLine("            return publisher.Publish(notification, ct);");
-        sb.AppendLine("        }");
-        sb.AppendLine("        else");
-        sb.AppendLine("        {");
-        sb.AppendLine("            var publisher = _services.GetRequiredService<SequentialPublisher>();");
-        sb.AppendLine("            return publisher.Publish(notification, ct);");
-        sb.AppendLine("        }");
-        sb.AppendLine("    }");
+        foreach (var h in handlers.Where(h => h.Kind == kind))
+            sb.AppendLine($"        [typeof({h.MessageFullName})] = {invoker(h)},");
+        sb.AppendLine("    }.ToFrozenDictionary();");
         sb.AppendLine();
     }
 

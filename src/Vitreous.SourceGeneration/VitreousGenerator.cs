@@ -348,7 +348,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.Command,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -362,7 +363,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.Query,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -376,7 +378,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.StreamQuery,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -390,7 +393,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.VoidCommand,
                     ResultFullName:  null,
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
         }
@@ -669,6 +673,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             if (map.ContainsKey(msg.MessageFullName))
                 continue;
 
+            // The dispatcher falls back to the nearest base type that has a handler.
+            if (msg.BaseTypeFullNames.Any(map.ContainsKey))
+                continue;
+
             var handlerKindWord = msg.Kind switch
             {
                 HandlerKind.Query       => "Query",
@@ -771,6 +779,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         if (!map.TryGetValue(key, out var list))
             map[key] = list = new List<HandlerRef>();
         list.Add(value);
+    }
+
+    /// <summary>Fully-qualified names of the base classes of <paramref name="symbol"/>, nearest first.</summary>
+    private static IReadOnlyList<string> BaseTypeNames(INamedTypeSymbol symbol)
+    {
+        var names = new List<string>();
+        for (var t = symbol.BaseType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            names.Add(t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
+        return names;
     }
 
     /// <summary>The first source location of <paramref name="symbol"/>, or <see cref="Location.None"/>.</summary>

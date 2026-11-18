@@ -1,4 +1,6 @@
 using System.Collections.Immutable;
+using System.Reflection;
+using System.Runtime.Loader;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 
@@ -128,5 +130,64 @@ internal static class GeneratorTestHelper
         return updated.GetDiagnostics()
             .Where(static d => d.Severity == DiagnosticSeverity.Error)
             .ToImmutableArray();
+    }
+
+    /// <summary>
+    /// Runs the generator over <paramref name="source"/> (compiled as <paramref name="assemblyName"/>
+    /// with any <paramref name="extraReferences"/>) and returns the updated compilation together with
+    /// every error: generator diagnostics and C# compiler errors alike.
+    /// </summary>
+    internal static (Compilation Compilation, ImmutableArray<Diagnostic> Errors) CompileWithGenerator(
+        string source,
+        string assemblyName = "TestAssembly",
+        params MetadataReference[] extraReferences)
+    {
+        var compilation = CSharpCompilation.Create(
+            assemblyName,
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references: s_defaultRefs.Value.Concat(extraReferences),
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        var driver = CSharpGeneratorDriver.Create(new Vitreous.SourceGeneration.VitreousGenerator());
+        driver.RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
+
+        var errors = generatorDiagnostics.Concat(updated.GetDiagnostics())
+            .Where(static d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+
+        return (updated, errors);
+    }
+
+    /// <summary>
+    /// Compiles <paramref name="source"/> with the generator, emits it, and loads it into a fresh
+    /// load context so tests can call the generated <c>AddVitreousHandlers()</c> and dispatch through
+    /// the generated dispatcher. Vitreous and DI types are shared with the test process.
+    /// </summary>
+    internal static Assembly EmitAndLoad(string source)
+    {
+        var (compilation, errors) = CompileWithGenerator(source, "TestAssembly_" + Guid.NewGuid().ToString("N"));
+        if (!errors.IsEmpty)
+            throw new InvalidOperationException("Compilation failed:\n" + string.Join("\n", errors));
+
+        using var stream = new MemoryStream();
+        var emit = compilation.Emit(stream);
+        if (!emit.Success)
+            throw new InvalidOperationException("Emit failed:\n" + string.Join("\n", emit.Diagnostics));
+
+        stream.Position = 0;
+        return new AssemblyLoadContext(name: null, isCollectible: true).LoadFromStream(stream);
+    }
+
+    /// <summary>
+    /// Emits <paramref name="source"/> (with the generator) as a metadata reference named
+    /// <paramref name="assemblyName"/>, for multi-project scenarios.
+    /// </summary>
+    internal static MetadataReference EmitAsReference(string source, string assemblyName)
+    {
+        var (compilation, errors) = CompileWithGenerator(source, assemblyName);
+        if (!errors.IsEmpty)
+            throw new InvalidOperationException("Compilation failed:\n" + string.Join("\n", errors));
+
+        return compilation.ToMetadataReference();
     }
 }
