@@ -209,10 +209,17 @@ public class VitreousGeneratorTests
 
         var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
 
+        // One error per handler, each at that handler's declaration.
         var vit002 = diagnostics.Where(static d => d.Id == "VIT002").ToList();
-        vit002.Should().HaveCount(1);
-        vit002[0].Severity.Should().Be(DiagnosticSeverity.Error);
-        vit002[0].GetMessage().Should().Contain("TestProject.VoidCmd");
+        vit002.Should().HaveCount(2);
+        vit002.Should().AllSatisfy(static d =>
+        {
+            d.Severity.Should().Be(DiagnosticSeverity.Error);
+            d.GetMessage().Should().Contain("TestProject.VoidCmd");
+            d.Location.IsInSource.Should().BeTrue();
+        });
+        vit002.Select(static d => d.Location.SourceTree!.GetText().ToString(d.Location.SourceSpan))
+            .Should().BeEquivalentTo("H1", "H2");
     }
 
     // -------------------------------------------------------------------------
@@ -281,6 +288,82 @@ public class VitreousGeneratorTests
         var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
 
         diagnostics.Where(static d => d.Id == "VIT003").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void VIT003_NonIteratorHelperReturningAsyncEnumerable_NoWarning()
+    {
+        // [EnumeratorCancellation] has no effect on a non-iterator (CS8424), so VIT003 must
+        // not ask for it there.
+        const string source = """
+            using Vitreous.Abstractions;
+            using System.Collections.Generic;
+            using System.Threading;
+            namespace TestProject;
+
+            public record ItemDto;
+            public class MyStreamQuery : IStreamQuery<ItemDto> { }
+            public class MyStreamHandler : IStreamQueryHandler<MyStreamQuery, ItemDto>
+            {
+                public System.Threading.Tasks.ValueTask<Vitreous.Result<IAsyncEnumerable<ItemDto>>> Handle(
+                    MyStreamQuery query, CancellationToken ct = default) =>
+                    new(Vitreous.Result<IAsyncEnumerable<ItemDto>>.Ok(Wrap(Source(), ct)));
+
+                private static IAsyncEnumerable<ItemDto> Wrap(IAsyncEnumerable<ItemDto> source, CancellationToken ct) => source;
+
+                private static async IAsyncEnumerable<ItemDto> Source()
+                {
+                    yield return new ItemDto();
+                    await System.Threading.Tasks.Task.CompletedTask;
+                }
+            }
+            """;
+
+        var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
+
+        diagnostics.Where(static d => d.Id == "VIT003").Should().BeEmpty();
+    }
+
+    [Fact]
+    public void VIT003_AsyncMethodWhoseOnlyYieldIsInALocalFunction_NoWarning()
+    {
+        const string source = """
+            using Vitreous.Abstractions;
+            using System.Collections.Generic;
+            using System.Runtime.CompilerServices;
+            using System.Threading;
+            using System.Threading.Tasks;
+            namespace TestProject;
+
+            public record ItemDto;
+            public class MyStreamQuery : IStreamQuery<ItemDto> { }
+            public class MyStreamHandler : IStreamQueryHandler<MyStreamQuery, ItemDto>
+            {
+                public ValueTask<Vitreous.Result<IAsyncEnumerable<ItemDto>>> Handle(
+                    MyStreamQuery query, CancellationToken ct = default) => default;
+
+                // Not an iterator itself: the yield belongs to the local function.
+                private async IAsyncEnumerable<ItemDto> Outer(CancellationToken ct)
+                {
+                    await Task.CompletedTask;
+                    await foreach (var item in Inner(ct))
+                        yield return item;
+
+                    static async IAsyncEnumerable<ItemDto> Inner([EnumeratorCancellation] CancellationToken token)
+                    {
+                        await Task.CompletedTask;
+                        yield return new ItemDto();
+                    }
+                }
+            }
+            """;
+
+        var (diagnostics, _) = GeneratorTestHelper.RunGenerator(source);
+
+        // Outer *is* an async iterator (it yields directly), so it is reported; Inner is fine.
+        diagnostics.Where(static d => d.Id == "VIT003")
+            .Should().ContainSingle()
+            .Which.GetMessage().Should().Contain("Outer");
     }
 
     // -------------------------------------------------------------------------
