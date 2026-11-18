@@ -60,40 +60,26 @@ public class GeneratedDispatcherTests
         public sealed record Unhandled : IQuery<int>;
         """;
 
-    private static readonly Lazy<Assembly> s_assembly = new(() =>
-        GeneratorTestHelper.EmitAndLoad(Messages)
-    );
+    private static readonly Lazy<Assembly> s_assembly = new(() => GeneratorTestHelper.EmitAndLoad(Messages));
 
     private static ISender CreateSender()
     {
         var services = new ServiceCollection();
-        var extensions = s_assembly.Value.GetType(
-            "Vitreous.VitreousGeneratedServiceCollectionExtensions",
-            throwOnError: true
-        )!;
+        var extensions = s_assembly.Value.GetType("Vitreous.VitreousGeneratedServiceCollectionExtensions", throwOnError: true)!;
         extensions.GetMethod("AddVitreousHandlers")!.Invoke(null, [services, null]);
 
-        var root = services.BuildServiceProvider(
-            new ServiceProviderOptions { ValidateScopes = true }
-        );
+        var root = services.BuildServiceProvider(new ServiceProviderOptions { ValidateScopes = true });
         return root.CreateScope().ServiceProvider.GetRequiredService<ISender>();
     }
 
     private static T Create<T>(string typeName, params object[] args) =>
-        (T)
-            Activator.CreateInstance(
-                s_assembly.Value.GetType("TestProject." + typeName, throwOnError: true)!,
-                args
-            )!;
+        (T)Activator.CreateInstance(s_assembly.Value.GetType("TestProject." + typeName, throwOnError: true)!, args)!;
 
     [Fact]
     public void GeneratedTypes_AreInternal()
     {
         s_assembly.Value.GetType("Vitreous.VitreousDispatcher")!.IsPublic.Should().BeFalse();
-        s_assembly
-            .Value.GetType("Vitreous.VitreousGeneratedServiceCollectionExtensions")!
-            .IsPublic.Should()
-            .BeFalse();
+        s_assembly.Value.GetType("Vitreous.VitreousGeneratedServiceCollectionExtensions")!.IsPublic.Should().BeFalse();
     }
 
     [Fact]
@@ -109,9 +95,7 @@ public class GeneratedDispatcherTests
     {
         var sender = CreateSender();
 
-        (await sender.Send(Create<IQuery<string>>("DerivedWithoutHandlerQ")))
-            .Value.Should()
-            .Be("base");
+        (await sender.Send(Create<IQuery<string>>("DerivedWithoutHandlerQ"))).Value.Should().Be("base");
         (await sender.Send(Create<IQuery<string>>("BaseQ"))).Value.Should().Be("base");
     }
 
@@ -178,12 +162,9 @@ public class GeneratedDispatcherTests
     {
         var (diagnostics, _) = GeneratorTestHelper.RunGenerator(Messages);
 
-        diagnostics
-            .Where(static d => d.Id == "VIT001")
+        diagnostics.Where(static d => d.Id == "VIT001")
             .Select(static d => d.GetMessage())
-            .Should()
-            .ContainSingle()
-            .Which.Should()
-            .Contain("Unhandled");
+            .Should().ContainSingle()
+            .Which.Should().Contain("Unhandled");
     }
 }
