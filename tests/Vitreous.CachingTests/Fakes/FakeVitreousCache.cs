@@ -15,13 +15,21 @@ public sealed class FakeVitreousCache : IVitreousCache
     public List<string> SetCalls    { get; } = [];
     public List<string> RemoveCalls { get; } = [];
     public List<string> TagCalls    { get; } = [];
+    public List<DistributedCacheEntryOptions> SetOptions { get; } = [];
+
+    private readonly ConcurrentDictionary<string, bool> _nullHits = new();
 
     /// <summary>Pre-populate the cache to simulate a hit.</summary>
     public void Seed<T>(string key, T value) => _store[key] = value;
 
+    /// <summary>Simulate a hit whose stored value is null (e.g. JSON <c>null</c>).</summary>
+    public void SeedNullHit(string key) => _nullHits[key] = true;
+
     public ValueTask<(bool Hit, T? Value)> GetAsync<T>(string key, CancellationToken ct = default)
     {
         GetCalls.Add(key);
+        if (_nullHits.ContainsKey(key))
+            return new((true, default));
         if (_store.TryGetValue(key, out var raw) && raw is T typed)
             return new((true, typed));
         return new((false, default));
@@ -35,6 +43,8 @@ public sealed class FakeVitreousCache : IVitreousCache
         CancellationToken ct = default)
     {
         SetCalls.Add(key);
+        SetOptions.Add(options);
+        _nullHits.TryRemove(key, out _);
         _store[key] = value;
         return ValueTask.CompletedTask;
     }

@@ -123,6 +123,165 @@ public sealed class CachingBehaviorTests
         faultyCache.SetCalled.Should().BeTrue();
     }
 
+    // ── Null cached value ──────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Handle_CachedValueIsNull_TreatedAsMiss()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = CreateBehavior<GetItemQuery, string>(cache);
+        cache.SeedNullHit("item:1");
+
+        var result = await behavior.Handle(
+            new GetItemQuery(1),
+            Handler<GetItemQuery, string>(_ => Result<string>.Ok("fresh")),
+            default);
+
+        result.Value.Should().Be("fresh");
+        cache.SetCalls.Should().ContainSingle("item:1");
+    }
+
+    // ── Default expiration ─────────────────────────────────────────────────────
+
+    private sealed record NoExpiryQuery(int Id) : ICacheableQuery<string>
+    {
+        public string CacheKey              => $"no-expiry:{Id}";
+        public TimeSpan? AbsoluteExpiration => null;
+        public TimeSpan? SlidingExpiration  => null;
+    }
+
+    private sealed record SlidingQuery(int Id) : ICacheableQuery<string>
+    {
+        public string CacheKey              => $"sliding:{Id}";
+        public TimeSpan? AbsoluteExpiration => null;
+        public TimeSpan? SlidingExpiration  => TimeSpan.FromMinutes(1);
+    }
+
+    [Fact]
+    public async Task Handle_QueryWithoutExpiry_UsesDefaultAbsoluteExpiration()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = new CachingBehavior<NoExpiryQuery, string>(
+            cache, NullLogger<CachingBehavior<NoExpiryQuery, string>>.Instance,
+            new Vitreous.Caching.VitreousCachingOptions { DefaultAbsoluteExpiration = TimeSpan.FromMinutes(10) });
+
+        await behavior.Handle(new NoExpiryQuery(1), Handler<NoExpiryQuery, string>(_ => "v"), default);
+
+        cache.SetOptions.Should().ContainSingle()
+            .Which.AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromMinutes(10));
+    }
+
+    [Fact]
+    public async Task Handle_QueryWithOwnExpiry_IgnoresDefaultAbsoluteExpiration()
+    {
+        var cache   = new FakeVitreousCache();
+        var options = new Vitreous.Caching.VitreousCachingOptions { DefaultAbsoluteExpiration = TimeSpan.FromMinutes(10) };
+
+        await new CachingBehavior<GetItemQuery, string>(cache, NullLogger<CachingBehavior<GetItemQuery, string>>.Instance, options)
+            .Handle(new GetItemQuery(1), Handler<GetItemQuery, string>(_ => "v"), default);
+        await new CachingBehavior<SlidingQuery, string>(cache, NullLogger<CachingBehavior<SlidingQuery, string>>.Instance, options)
+            .Handle(new SlidingQuery(1), Handler<SlidingQuery, string>(_ => "v"), default);
+
+        cache.SetOptions[0].AbsoluteExpirationRelativeToNow.Should().Be(TimeSpan.FromMinutes(5));
+        cache.SetOptions[1].AbsoluteExpirationRelativeToNow.Should().BeNull();
+        cache.SetOptions[1].SlidingExpiration.Should().Be(TimeSpan.FromMinutes(1));
+    }
+
+    // ── Stampede protection ────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task Handle_ConcurrentMissesForSameKey_RunTheHandlerOnce()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = CreateBehavior<GetItemQuery, string>(cache);
+        var gate     = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls    = 0;
+
+        MessageHandlerDelegate<GetItemQuery, string> slow = async (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            await gate.Task;
+            return "loaded";
+        };
+
+        var pending = Enumerable.Range(0, 10)
+            .Select(_ => behavior.Handle(new GetItemQuery(1), slow, default).AsTask())
+            .ToList();
+        gate.SetResult();
+        var results = await Task.WhenAll(pending);
+
+        calls.Should().Be(1);
+        results.Should().AllSatisfy(r => r.Value.Should().Be("loaded"));
+        cache.SetCalls.Should().ContainSingle();
+    }
+
+    [Fact]
+    public async Task Handle_StampedeProtectionDisabled_EveryMissRunsTheHandler()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = new CachingBehavior<GetItemQuery, string>(
+            cache, NullLogger<CachingBehavior<GetItemQuery, string>>.Instance,
+            new Vitreous.Caching.VitreousCachingOptions { EnableStampedeProtection = false });
+        var gate  = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var calls = 0;
+
+        MessageHandlerDelegate<GetItemQuery, string> slow = async (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            await gate.Task;
+            return "loaded";
+        };
+
+        var pending = Enumerable.Range(0, 5)
+            .Select(_ => behavior.Handle(new GetItemQuery(1), slow, default).AsTask())
+            .ToList();
+        gate.SetResult();
+        await Task.WhenAll(pending);
+
+        calls.Should().Be(5);
+    }
+
+    [Fact]
+    public async Task Handle_CallerRunningTheHandlerIsCanceled_WaitingCallerLoadsItself()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = CreateBehavior<GetItemQuery, string>(cache);
+        var calls    = 0;
+
+        MessageHandlerDelegate<GetItemQuery, string> waitForCancel = async (_, token) =>
+        {
+            Interlocked.Increment(ref calls);
+            await Task.Delay(Timeout.Infinite, token);
+            return "never";
+        };
+        MessageHandlerDelegate<GetItemQuery, string> quick = (_, _) =>
+        {
+            Interlocked.Increment(ref calls);
+            return new ValueTask<Result<string>>("loaded");
+        };
+
+        using var leaderCts = new CancellationTokenSource();
+        var leader = behavior.Handle(new GetItemQuery(1), waitForCancel, leaderCts.Token).AsTask();
+        var waiter = behavior.Handle(new GetItemQuery(1), quick, default).AsTask();
+        leaderCts.Cancel();
+
+        await FluentActions.Awaiting(() => leader).Should().ThrowAsync<OperationCanceledException>();
+        (await waiter).Value.Should().Be("loaded");
+        calls.Should().Be(2);
+    }
+
+    [Fact]
+    public async Task Handle_DifferentKeys_AreNotShared()
+    {
+        var cache    = new FakeVitreousCache();
+        var behavior = CreateBehavior<GetItemQuery, string>(cache);
+
+        var a = await behavior.Handle(new GetItemQuery(1), Handler<GetItemQuery, string>(q => $"v{q.Id}"), default);
+        var b = await behavior.Handle(new GetItemQuery(2), Handler<GetItemQuery, string>(q => $"v{q.Id}"), default);
+
+        (a.Value, b.Value).Should().Be(("v1", "v2"));
+    }
+
     // ── Helpers ────────────────────────────────────────────────────────────────
 
     private sealed class ThrowingOnReadCache : IVitreousCache
