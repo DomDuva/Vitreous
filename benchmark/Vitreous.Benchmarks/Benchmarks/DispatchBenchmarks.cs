@@ -88,6 +88,8 @@ public class DispatchBenchmarks
     private static readonly VH.BenchNotification VN   = new();
     private static readonly VH.BenchStreamQuery  VSQ1  = new(1);
     private static readonly VH.BenchStreamQuery  VSQ10 = new(10);
+    private static readonly MH.LargeQuery200     MLQ   = new();
+    private static readonly VH.LargeQuery200     VLQ   = new();
 
     [GlobalSetup]
     public void Setup()
@@ -152,6 +154,19 @@ public class DispatchBenchmarks
             case LibraryKind.MediatR:         _ = await _mediatRSender.Send(MQ);         break;
             case LibraryKind.MediatRSingleton: _ = await _mediatRSingletonSender.Send(MQ); break;
             default:                           _ = await _vitreous.Send(VQ);              break;
+        }
+    }
+
+    // ── Send (return result, 200 other handlers registered) ────────────────────
+
+    [Benchmark(Description = "Send (return result, 200+ handlers registered)")]
+    public async Task Send_Result_LargeRegistry()
+    {
+        switch (Mediator)
+        {
+            case LibraryKind.MediatR:         _ = await _mediatRSender.Send(MLQ);         break;
+            case LibraryKind.MediatRSingleton: _ = await _mediatRSingletonSender.Send(MLQ); break;
+            default:                           _ = await _vitreous.Send(VLQ);              break;
         }
     }
 
