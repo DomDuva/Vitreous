@@ -58,11 +58,12 @@ internal static class RegistrationEmitter
 
         sb.AppendLine();
         // Register the generated dispatcher, replacing the reflection fallback.
-        // The dispatcher follows the handler lifetime (scoped handlers need a scoped dispatcher
-        // so they are resolved from the request scope, not the root provider).
+        // The dispatcher is a singleton only for singleton handlers; scoped and transient
+        // handlers need a scoped dispatcher so they resolve from the request scope.
         sb.AppendLine("        // Replace reflection-based fallbacks with the source-generated dispatcher");
-        sb.AppendLine("        // Scoped handlers must be resolved from the request scope, so the dispatcher is scoped too.");
-        sb.AppendLine("        var dispatcherLifetime = lifetime == ServiceLifetime.Scoped ? ServiceLifetime.Scoped : ServiceLifetime.Singleton;");
+        sb.AppendLine("        // Unless handlers are singletons they must be resolved from the request scope,");
+        sb.AppendLine("        // so the dispatcher is scoped too.");
+        sb.AppendLine("        var dispatcherLifetime = lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped;");
         sb.AppendLine("        services.RemoveAll<ISender>();");
         sb.AppendLine("        services.RemoveAll<IPublisher>();");
         sb.AppendLine("        services.Add(new ServiceDescriptor(typeof(VitreousDispatcher), typeof(VitreousDispatcher), dispatcherLifetime));");

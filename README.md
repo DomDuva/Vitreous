@@ -158,12 +158,12 @@ Both overloads accept an optional `Action<VitreousOptions>` callback:
 ```csharp
 builder.Services.AddVitreousHandlers(options =>
 {
-    options.DefaultHandlerLifetime      = ServiceLifetime.Singleton;             // default
+    options.DefaultHandlerLifetime      = ServiceLifetime.Scoped;                // default
     options.NotificationPublishStrategy = NotificationPublishStrategy.Sequential; // default; set to Parallel for concurrent fan-out
 });
 ```
 
-`DefaultHandlerLifetime` applies to every discovered handler. Use `Scoped` when handlers depend on scoped services such as a `DbContext` — `ISender` and `IPublisher` then become scoped too, so resolve them from the request scope (which minimal APIs and controllers do automatically).
+`DefaultHandlerLifetime` applies to every discovered handler. The default, `Scoped`, is safe for handlers that depend on scoped services such as a `DbContext`. `ISender` and `IPublisher` are scoped unless the lifetime is `Singleton`, so resolve them from a scope: minimal APIs and controllers do this automatically, while background services should create one with `IServiceScopeFactory`. Use `Singleton` only when every handler is stateless and has no scoped dependencies.
 
 ---
 
@@ -890,8 +890,8 @@ Commands and queries must have exactly one handler. If you need fan-out, use a n
 **`The type 'VitreousDispatcher' exists in both ...`**
 `Vitreous.SourceGeneration` is installed on more than one project in the dependency graph. Keep it only on the entry-point project; class-library projects need just `Vitreous`.
 
-**Scoped services (`DbContext`) throw `Cannot resolve scoped service from root provider`**
-Set `options.DefaultHandlerLifetime = ServiceLifetime.Scoped` in `AddVitreousHandlers(...)`. The sender and publisher follow the handler lifetime automatically.
+**`Cannot resolve scoped service 'ISender' from root provider`**
+Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies.
 
 **Only one notification handler runs**
 Fixed in the version after 0.1.0 — earlier generated code registered notification handlers with `TryAddSingleton`, which kept only the first. Update both `Vitreous` and `Vitreous.SourceGeneration`.

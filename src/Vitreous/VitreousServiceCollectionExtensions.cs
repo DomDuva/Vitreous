@@ -45,12 +45,14 @@ public static partial class VitreousServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(options);
 
-        // Register options for other packages (DevUI, source-generated dispatcher, etc.) to consume
-        services.AddSingleton(options);
+        // Register options for other packages (DevUI, source-generated dispatcher, etc.) to consume.
+        // TryAdd: calling AddVitreous more than once must not register a second instance.
+        services.TryAddSingleton(options);
 
         // The sender/publisher resolve handlers from the IServiceProvider they were created
-        // with. If handlers are scoped, the dispatching services must be scoped too so they
-        // resolve from the request scope rather than the root provider.
+        // with. Unless handlers are singletons, the dispatching services must be scoped so
+        // they resolve from the request scope rather than the root provider (a transient
+        // handler resolved from the root would capture scoped dependencies).
         var lifetime = GetDispatcherLifetime(options);
 
         // Fallback sender — overridden by source-generated VitreousDispatcher when present
@@ -78,9 +80,9 @@ public static partial class VitreousServiceCollectionExtensions
     /// registered with for the configured handler lifetime.
     /// </summary>
     private static ServiceLifetime GetDispatcherLifetime(VitreousOptions options) =>
-        options.DefaultHandlerLifetime == ServiceLifetime.Scoped
-            ? ServiceLifetime.Scoped
-            : ServiceLifetime.Singleton;
+        options.DefaultHandlerLifetime == ServiceLifetime.Singleton
+            ? ServiceLifetime.Singleton
+            : ServiceLifetime.Scoped;
 
     /// <summary>
     /// Registers Vitreous core services and scans the provided <paramref name="assemblies"/>
