@@ -33,9 +33,13 @@ internal sealed class ReflectionSender : ISender
 
     private readonly IServiceProvider _services;
 
-    // Keyed by (concrete message type, result type). Result type is part of the key so a
-    // message that implements several ICommand<T>/IQuery<T> interfaces still works.
-    private readonly ConcurrentDictionary<(Type Message, Type Result), Delegate> _invokers = new();
+    private enum DispatchKind { Command, VoidCommand, Query, Stream }
+
+    // Keyed by (concrete message type, result type, dispatch kind). The result type is part of
+    // the key so a message that implements several ICommand<T>/IQuery<T> interfaces still works,
+    // and the kind keeps a type that is both ICommand<T> and IQuery<T> from reusing the wrong
+    // (differently typed) invoker.
+    private readonly ConcurrentDictionary<(Type Message, Type Result, DispatchKind Kind), Delegate> _invokers = new();
 
     public ReflectionSender(IServiceProvider services) => _services = services;
 
@@ -46,7 +50,7 @@ internal sealed class ReflectionSender : ISender
         ArgumentNullException.ThrowIfNull(command);
 
         var invoker = (Func<IServiceProvider, ICommand<TResult>, CancellationToken, ValueTask<Result<TResult>>>)
-            _invokers.GetOrAdd((command.GetType(), typeof(TResult)), static key =>
+            _invokers.GetOrAdd((command.GetType(), typeof(TResult), DispatchKind.Command), static key =>
                 _executeCommand
                     .MakeGenericMethod(key.Message, key.Result)
                     .CreateDelegate<Func<IServiceProvider, ICommand<TResult>, CancellationToken, ValueTask<Result<TResult>>>>());
@@ -59,7 +63,7 @@ internal sealed class ReflectionSender : ISender
         ArgumentNullException.ThrowIfNull(command);
 
         var invoker = (Func<IServiceProvider, ICommand, CancellationToken, ValueTask<Result>>)
-            _invokers.GetOrAdd((command.GetType(), typeof(Unit)), static key =>
+            _invokers.GetOrAdd((command.GetType(), typeof(Unit), DispatchKind.VoidCommand), static key =>
                 _executeVoidCommand
                     .MakeGenericMethod(key.Message)
                     .CreateDelegate<Func<IServiceProvider, ICommand, CancellationToken, ValueTask<Result>>>());
@@ -74,7 +78,7 @@ internal sealed class ReflectionSender : ISender
         ArgumentNullException.ThrowIfNull(query);
 
         var invoker = (Func<IServiceProvider, IQuery<TResult>, CancellationToken, ValueTask<Result<TResult>>>)
-            _invokers.GetOrAdd((query.GetType(), typeof(TResult)), static key =>
+            _invokers.GetOrAdd((query.GetType(), typeof(TResult), DispatchKind.Query), static key =>
                 _executeQuery
                     .MakeGenericMethod(key.Message, key.Result)
                     .CreateDelegate<Func<IServiceProvider, IQuery<TResult>, CancellationToken, ValueTask<Result<TResult>>>>());
@@ -89,7 +93,7 @@ internal sealed class ReflectionSender : ISender
         ArgumentNullException.ThrowIfNull(query);
 
         var invoker = (StreamInvoker<TResult>)
-            _invokers.GetOrAdd((query.GetType(), typeof(IAsyncEnumerable<TResult>)), static key =>
+            _invokers.GetOrAdd((query.GetType(), typeof(TResult), DispatchKind.Stream), static key =>
                 _executeStream
                     .MakeGenericMethod(key.Message, typeof(TResult))
                     .CreateDelegate<StreamInvoker<TResult>>());

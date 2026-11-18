@@ -452,7 +452,7 @@ public class VitreousGeneratorTests
 
         registrations.Should().Contain("var lifetime = options.DefaultHandlerLifetime;");
         registrations.Should().Contain("typeof(TestProject.QH), lifetime)");
-        registrations.Should().Contain("var dispatcherLifetime = lifetime == ServiceLifetime.Scoped");
+        registrations.Should().Contain("var dispatcherLifetime = lifetime == ServiceLifetime.Singleton ? ServiceLifetime.Singleton : ServiceLifetime.Scoped");
         // The generated class must not collide with the core class name (CS0436).
         registrations.Should().NotContain("partial class VitreousServiceCollectionExtensions");
     }

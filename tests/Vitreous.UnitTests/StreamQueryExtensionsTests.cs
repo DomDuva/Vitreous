@@ -49,7 +49,47 @@ public sealed class StreamQueryExtensionsTests
         throw new InvalidOperationException("mid-stream failure");
     }
 
+    /// <summary>Infinite source that counts how many items were actually pulled.</summary>
+    private sealed class CountingSource : IAsyncEnumerable<int>
+    {
+        public int Pulled { get; private set; }
+
+        public async IAsyncEnumerator<int> GetAsyncEnumerator(CancellationToken ct = default)
+        {
+            for (var i = 0; ; i++)
+            {
+                await Task.Yield();
+                ct.ThrowIfCancellationRequested();
+                Pulled++;
+                yield return i;
+            }
+        }
+    }
+
+    private static async Task<List<T>> ToListAsync<T>(IAsyncEnumerable<T> source)
+    {
+        var list = new List<T>();
+        await foreach (var item in source)
+            list.Add(item);
+        return list;
+    }
+
     // ── CollectStream ─────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CollectStream_Canceled_PropagatesCancellation_NotInternalError()
+    {
+        var source = new CountingSource();
+        var sender = Substitute.For<ISender>();
+        sender.CreateStream(Arg.Any<IntStreamQuery>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromResult(Result<IAsyncEnumerable<int>>.Ok(source)));
+        using var cts = new CancellationTokenSource();
+        cts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        var act = async () => await sender.CollectStream(new IntStreamQuery(), cts.Token);
+
+        await act.Should().ThrowAsync<OperationCanceledException>();
+    }
 
     [Fact]
     public async Task CollectStream_SuccessfulStream_ReturnsAllItems()
@@ -156,6 +196,30 @@ public sealed class StreamQueryExtensionsTests
     }
 
     // ── TakeStream ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task TakeStream_DoesNotPullMoreItemsThanRequested()
+    {
+        var source = new CountingSource();
+
+        var items = await ToListAsync(Result<IAsyncEnumerable<int>>.Ok(source).TakeStream(2).Value);
+
+        items.Should().Equal(0, 1);
+        source.Pulled.Should().Be(2);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    public async Task TakeStream_NonPositiveCount_PullsNothing(int count)
+    {
+        var source = new CountingSource();
+
+        var items = await ToListAsync(Result<IAsyncEnumerable<int>>.Ok(source).TakeStream(count).Value);
+
+        items.Should().BeEmpty();
+        source.Pulled.Should().Be(0);
+    }
 
     [Fact]
     public async Task TakeStream_TruncatesToRequestedCount()

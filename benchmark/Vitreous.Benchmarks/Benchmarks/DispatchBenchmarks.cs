@@ -129,13 +129,13 @@ public class DispatchBenchmarks
 
         // ── Vitreous — Singleton (source-generated) ───────────────────────────
         var v1 = new ServiceCollection();
-        v1.AddVitreousHandlers();
+        v1.AddVitreousHandlers(o => o.DefaultHandlerLifetime = ServiceLifetime.Singleton);
         var vp1 = v1.BuildServiceProvider();
         _vitreous          = vp1.GetRequiredService<VSender>();
         _vitreousPublisher = vp1.GetRequiredService<VPublisher>();
 
         var v2 = new ServiceCollection();
-        v2.AddVitreousHandlers();
+        v2.AddVitreousHandlers(o => o.DefaultHandlerLifetime = ServiceLifetime.Singleton);
         v2.AddSingleton(
             typeof(Vitreous.Abstractions.IPipelineBehavior<,>),
             typeof(VH.BenchPassThroughBehavior<,>));

@@ -60,7 +60,7 @@ public class StartupBenchmarks
             default: // Vitreous
             {
                 var services = new ServiceCollection();
-                services.AddVitreousHandlers();
+                services.AddVitreousHandlers(o => o.DefaultHandlerLifetime = ServiceLifetime.Singleton);
                 return services.BuildServiceProvider();
             }
         }

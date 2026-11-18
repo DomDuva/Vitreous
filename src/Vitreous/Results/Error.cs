@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Vitreous;
 
 /// <summary>
@@ -11,6 +13,22 @@ public sealed record Error(
     string Message,
     IReadOnlyDictionary<string, object?>? Extensions = null)
 {
+    /// <summary>
+    /// The exception that caused this error, when one was supplied to <see cref="Internal"/>.
+    /// Kept for logging and diagnostics only: it is never serialized, so exception details
+    /// cannot leak to API clients through a serialized <see cref="Error"/>.
+    /// </summary>
+    [JsonIgnore]
+    public Exception? Exception { get; init; }
+
+    /// <summary>
+    /// The error reported by an uninitialized (<see langword="default"/>) <see cref="Result"/>
+    /// or <see cref="Result{T}"/>, which is a failure that was never given an error.
+    /// </summary>
+    public static Error Uninitialized { get; } = new(
+        "UNINITIALIZED",
+        "The Result was not initialized. Create results with Ok/Fail or the implicit conversions instead of default.");
+
     // -------------------------------------------------------------------------
     // Factory methods
     // -------------------------------------------------------------------------
@@ -41,6 +59,12 @@ public sealed record Error(
         new(code ?? "CONFLICT", message);
 
     /// <summary>Creates an "internal" error, optionally wrapping an exception.</summary>
+    /// <remarks>
+    /// The exception is available on <see cref="Exception"/> (with its stack trace) but is not
+    /// serialized. Only its type name is added to <see cref="Extensions"/> as
+    /// <c>exceptionType</c>; the exception message is deliberately left out because it often
+    /// contains internal details that should not reach clients.
+    /// </remarks>
     public static Error Internal(string message, Exception? exception = null, string? code = null)
     {
         if (exception is null)
@@ -48,10 +72,9 @@ public sealed record Error(
 
         var extensions = new Dictionary<string, object?>
         {
-            ["exceptionType"] = exception.GetType().Name,
-            ["exceptionMessage"] = exception.Message
+            ["exceptionType"] = exception.GetType().Name
         };
-        return new(code ?? "INTERNAL", message, extensions);
+        return new(code ?? "INTERNAL", message, extensions) { Exception = exception };
     }
 
     /// <summary>Creates a custom error with any code, message, and optional extensions.</summary>

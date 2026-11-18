@@ -20,6 +20,39 @@ public sealed class ResultTests
         act.Should().Throw<InvalidOperationException>();
     }
 
+    // ── default(Result) ──────────────────────────────────────────────────────
+
+    [Fact]
+    public void Default_IsFailure_WithUninitializedError()
+    {
+        Result result = default;
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeSameAs(Error.Uninitialized);
+        result.Match(() => "ok", e => e.Code).Should().Be("UNINITIALIZED");
+        result.ToString().Should().Contain("UNINITIALIZED");
+    }
+
+    [Fact]
+    public void Fail_NullError_Throws()
+    {
+        var act = () => Result.Fail(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    // ── Equality ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Equality_ComparesStateAndError()
+    {
+        var success = Result.Success;
+        (success == Result.Success).Should().BeTrue();
+        (Result.Fail(_error) == Result.Fail(new Error("ERR", "failed"))).Should().BeTrue();
+        (Result.Fail(_error) != Result.Success).Should().BeTrue();
+        Result.Fail(_error).Should().NotBe(Result.Fail(new Error("OTHER", "failed")));
+        Result.Fail(_error).GetHashCode().Should().Be(Result.Fail(new Error("ERR", "failed")).GetHashCode());
+    }
+
     // ── Fail ──────────────────────────────────────────────────────────────────
 
     [Fact]
