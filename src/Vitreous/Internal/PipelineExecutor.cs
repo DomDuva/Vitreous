@@ -25,23 +25,28 @@ public static class PipelineExecutor
         IEnumerable<IPipelineBehavior<TMessage, TResult>> behaviors,
         CancellationToken ct)
     {
-        // Fast path: no behaviors — skip Reverse() allocation entirely.
-        // GetServices returns T[] from MSDI; Array.Empty<T>() is also ICollection<T>.
-        if (behaviors is ICollection<IPipelineBehavior<TMessage, TResult>> { Count: 0 })
+        // GetServices returns T[] from MSDI; anything else is materialized once.
+        var list = AsList(behaviors);
+        if (list.Count == 0)
             return terminal(message, ct);
 
-        // Build the pipeline chain right-to-left so the first behavior is outermost.
-        MessageHandlerDelegate<TMessage, TResult> pipeline = terminal;
+        // Build the chain right-to-left so the first behavior is outermost. The outermost
+        // behavior is called directly, so N behaviors cost N-1 wrappers. Each wrapper is a
+        // fixed "next" for one position, so a behavior may call next more than once (retries).
+        var next = terminal;
+        for (var i = list.Count - 1; i > 0; i--)
+            next = Wrap(list[i], next);
 
-        foreach (var behavior in behaviors.Reverse())
-        {
-            var next = pipeline;       // capture for closure
-            var current = behavior;    // capture for closure
-            pipeline = (msg, token) => current.Handle(msg, next, token);
-        }
-
-        return pipeline(message, ct);
+        return list[0].Handle(message, next, ct);
     }
+
+    private static MessageHandlerDelegate<TMessage, TResult> Wrap<TMessage, TResult>(
+        IPipelineBehavior<TMessage, TResult> behavior,
+        MessageHandlerDelegate<TMessage, TResult> next) =>
+        (message, ct) => behavior.Handle(message, next, ct);
+
+    private static IReadOnlyList<T> AsList<T>(IEnumerable<T> items) =>
+        items as IReadOnlyList<T> ?? items.ToArray();
 
     /// <summary>
     /// Executes the pipeline for a void command.
@@ -85,18 +90,8 @@ public static class PipelineExecutor
                 : Result<Unit>.Fail(r.Error);
         };
 
-        // Build the chain with the same algorithm as Execute<,>
-        MessageHandlerDelegate<TCommand, Unit> pipeline = unitTerminal;
-
-        foreach (var behavior in behaviors.Reverse())
-        {
-            var next = pipeline;
-            var current = behavior;
-            pipeline = (cmd, token) => current.Handle(cmd, next, token);
-        }
-
-        // Run the chain, then adapt back: Result<Unit> → Result
-        var unitResult = await pipeline(command, ct);
+        // Run the chain (same algorithm as Execute<,>), then adapt back: Result<Unit> → Result
+        var unitResult = await Execute(command, unitTerminal, behaviors, ct);
         return unitResult.IsSuccess ? Result.Success : Result.Fail(unitResult.Error);
     }
 
@@ -114,22 +109,23 @@ public static class PipelineExecutor
         CancellationToken ct)
         where TMessage : IStreamQuery<TResult>
     {
-        // Fast path: no behaviors — skip Reverse() allocation entirely.
-        if (behaviors is ICollection<IStreamPipelineBehavior<TMessage, TResult>> { Count: 0 })
+        var list = AsList(behaviors);
+        if (list.Count == 0)
             return terminal(message, ct);
 
-        // Build the pipeline chain right-to-left so the first behavior is outermost.
-        StreamQueryHandlerDelegate<TMessage, TResult> pipeline = terminal;
+        // Same chain as Execute<,>: outermost behavior called directly, one wrapper per inner one.
+        var next = terminal;
+        for (var i = list.Count - 1; i > 0; i--)
+            next = WrapStream(list[i], next);
 
-        foreach (var behavior in behaviors.Reverse())
-        {
-            var next    = pipeline;
-            var current = behavior;
-            pipeline = (msg, token) => current.Handle(msg, next, token);
-        }
-
-        return pipeline(message, ct);
+        return list[0].Handle(message, next, ct);
     }
+
+    private static StreamQueryHandlerDelegate<TMessage, TResult> WrapStream<TMessage, TResult>(
+        IStreamPipelineBehavior<TMessage, TResult> behavior,
+        StreamQueryHandlerDelegate<TMessage, TResult> next)
+        where TMessage : IStreamQuery<TResult> =>
+        (message, ct) => behavior.Handle(message, next, ct);
 
     /// <summary>
     /// Executes the notification pipeline.
@@ -141,19 +137,21 @@ public static class PipelineExecutor
         CancellationToken ct)
         where TNotification : INotification
     {
-        // Fast path: no behaviors — skip Reverse() allocation entirely.
-        if (behaviors is ICollection<INotificationPipelineBehavior<TNotification>> { Count: 0 })
+        var list = AsList(behaviors);
+        if (list.Count == 0)
             return terminal(notification, ct);
 
-        NotificationHandlerDelegate<TNotification> pipeline = terminal;
+        // Same chain as Execute<,>: outermost behavior called directly, one wrapper per inner one.
+        var next = terminal;
+        for (var i = list.Count - 1; i > 0; i--)
+            next = WrapNotification(list[i], next);
 
-        foreach (var behavior in behaviors.Reverse())
-        {
-            var next = pipeline;
-            var current = behavior;
-            pipeline = (n, token) => current.Handle(n, next, token);
-        }
-
-        return pipeline(notification, ct);
+        return list[0].Handle(notification, next, ct);
     }
+
+    private static NotificationHandlerDelegate<TNotification> WrapNotification<TNotification>(
+        INotificationPipelineBehavior<TNotification> behavior,
+        NotificationHandlerDelegate<TNotification> next)
+        where TNotification : INotification =>
+        (notification, ct) => behavior.Handle(notification, next, ct);
 }

@@ -113,6 +113,9 @@ internal sealed class ReflectionSender : ISender
             ?? throw NoHandler("command", typeof(TCommand), $"ICommandHandler<{typeof(TCommand).Name}, {typeof(TResult).Name}>");
 
         var behaviors = services.GetServices<IPipelineBehavior<TCommand, TResult>>();
+        // No behaviors: call the handler directly, without allocating a delegate for it.
+        if (behaviors is ICollection<IPipelineBehavior<TCommand, TResult>> { Count: 0 })
+            return handler.Handle((TCommand)command, ct);
         MessageHandlerDelegate<TCommand, TResult> terminal = handler.Handle;
         return PipelineExecutor.Execute((TCommand)command, terminal, behaviors, ct);
     }
@@ -125,6 +128,9 @@ internal sealed class ReflectionSender : ISender
             ?? throw NoHandler("command", typeof(TCommand), $"ICommandHandler<{typeof(TCommand).Name}>");
 
         var behaviors = services.GetServices<IPipelineBehavior<TCommand, Unit>>();
+        // No behaviors: call the handler directly, without allocating a delegate for it.
+        if (behaviors is ICollection<IPipelineBehavior<TCommand, Unit>> { Count: 0 })
+            return handler.Handle((TCommand)command, ct);
         CommandHandlerDelegate<TCommand> terminal = handler.Handle;
         return PipelineExecutor.ExecuteVoid((TCommand)command, terminal, behaviors, ct);
     }
@@ -137,6 +143,9 @@ internal sealed class ReflectionSender : ISender
             ?? throw NoHandler("query", typeof(TQuery), $"IQueryHandler<{typeof(TQuery).Name}, {typeof(TResult).Name}>");
 
         var behaviors = services.GetServices<IPipelineBehavior<TQuery, TResult>>();
+        // No behaviors: call the handler directly, without allocating a delegate for it.
+        if (behaviors is ICollection<IPipelineBehavior<TQuery, TResult>> { Count: 0 })
+            return handler.Handle((TQuery)query, ct);
         MessageHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
         return PipelineExecutor.Execute((TQuery)query, terminal, behaviors, ct);
     }
@@ -149,6 +158,9 @@ internal sealed class ReflectionSender : ISender
             ?? throw NoHandler("stream query", typeof(TQuery), $"IStreamQueryHandler<{typeof(TQuery).Name}, {typeof(TResult).Name}>");
 
         var behaviors = services.GetServices<IStreamPipelineBehavior<TQuery, TResult>>();
+        // No behaviors: call the handler directly, without allocating a delegate for it.
+        if (behaviors is ICollection<IStreamPipelineBehavior<TQuery, TResult>> { Count: 0 })
+            return handler.Handle((TQuery)query, ct);
         StreamQueryHandlerDelegate<TQuery, TResult> terminal = handler.Handle;
         return PipelineExecutor.ExecuteStream((TQuery)query, terminal, behaviors, ct);
     }

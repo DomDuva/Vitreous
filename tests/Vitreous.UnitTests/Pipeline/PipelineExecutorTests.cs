@@ -96,6 +96,39 @@ public sealed class PipelineExecutorTests
     }
 
     [Fact]
+    public async Task Execute_BehaviorCallingNextTwice_RerunsTheRestOfThePipeline()
+    {
+        // A retry behavior calls next() more than once; each call must run the inner
+        // behaviors and the terminal again, not skip ahead.
+        var log = new List<string>();
+        var behaviors = new IPipelineBehavior<TestQuery, int>[]
+        {
+            new RetryOnceBehavior<TestQuery, int>(log),
+            new OrderBehavior<TestQuery, int>(log, "Inner"),
+        };
+
+        await PipelineExecutor.Execute(
+            new TestQuery(), LoggingTerminal(log, 0), behaviors, CancellationToken.None);
+
+        log.Should().Equal(
+            "retry:1", "Inner:before", "terminal", "Inner:after",
+            "retry:2", "Inner:before", "terminal", "Inner:after");
+    }
+
+    [Fact]
+    public async Task Execute_BehaviorsAsNonArrayEnumerable_RunInOrder()
+    {
+        var log = new List<string>();
+        IEnumerable<IPipelineBehavior<TestQuery, int>> behaviors = new[] { "B1", "B2" }
+            .Select(name => (IPipelineBehavior<TestQuery, int>)new OrderBehavior<TestQuery, int>(log, name));
+
+        await PipelineExecutor.Execute(
+            new TestQuery(), LoggingTerminal(log, 0), behaviors, CancellationToken.None);
+
+        log.Should().Equal("B1:before", "B2:before", "terminal", "B2:after", "B1:after");
+    }
+
+    [Fact]
     public async Task Execute_BehaviorShortCircuits_TerminalIsNotCalled()
     {
         var terminalCalled = false;
@@ -345,6 +378,21 @@ public sealed class PipelineExecutorTests
             var result = await next(message, ct);
             log.Add($"{name}:after");
             return result;
+        }
+    }
+
+    private sealed class RetryOnceBehavior<TMessage, TResult>(List<string> log)
+        : IPipelineBehavior<TMessage, TResult>
+    {
+        public async ValueTask<Result<TResult>> Handle(
+            TMessage message,
+            MessageHandlerDelegate<TMessage, TResult> next,
+            CancellationToken ct)
+        {
+            log.Add("retry:1");
+            await next(message, ct);
+            log.Add("retry:2");
+            return await next(message, ct);
         }
     }
 
