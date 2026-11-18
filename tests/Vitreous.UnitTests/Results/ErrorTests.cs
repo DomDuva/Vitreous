@@ -123,15 +123,26 @@ public sealed class ErrorTests
     }
 
     [Fact]
-    public void Internal_WithException_PopulatesExtensions()
+    public void Internal_WithException_KeepsExceptionAndOnlyExposesItsType()
     {
         var ex = new InvalidOperationException("inner message");
         var error = Error.Internal("boom", ex);
 
+        error.Exception.Should().BeSameAs(ex);
         error.Extensions.Should().ContainKey("exceptionType");
-        error.Extensions.Should().ContainKey("exceptionMessage");
         error.Extensions!["exceptionType"].Should().Be(nameof(InvalidOperationException));
-        error.Extensions!["exceptionMessage"].Should().Be("inner message");
+        error.Extensions.Should().NotContainKey("exceptionMessage");
+    }
+
+    [Fact]
+    public void Internal_WithException_DoesNotSerializeTheException()
+    {
+        var error = Error.Internal("boom", new InvalidOperationException("secret connection string"));
+
+        var json = System.Text.Json.JsonSerializer.Serialize(error);
+
+        json.Should().NotContain("secret connection string");
+        json.Should().NotContainEquivalentOf("\"exception\"");
     }
 
     [Fact]

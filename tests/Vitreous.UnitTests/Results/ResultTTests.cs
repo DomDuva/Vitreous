@@ -4,6 +4,38 @@ public sealed class ResultTTests
 {
     private static readonly Error _error = new("ERR", "something went wrong");
 
+    // ── default(Result<T>) ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Default_IsFailure_WithUninitializedError()
+    {
+        Result<int> result = default;
+
+        result.IsFailure.Should().BeTrue();
+        result.Error.Should().BeSameAs(Error.Uninitialized);
+        result.Match(v => "ok", e => e.Code).Should().Be("UNINITIALIZED");
+        result.Map(v => v + 1).Error.Should().BeSameAs(Error.Uninitialized);
+    }
+
+    [Fact]
+    public void Fail_NullError_Throws()
+    {
+        var act = () => Result<int>.Fail(null!);
+        act.Should().Throw<ArgumentNullException>();
+    }
+
+    // ── Equality ──────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Equality_ComparesValueOrError()
+    {
+        (Result<int>.Ok(1) == Result<int>.Ok(1)).Should().BeTrue();
+        (Result<int>.Ok(1) != Result<int>.Ok(2)).Should().BeTrue();
+        (Result<int>.Fail(_error) == Result<int>.Fail(new Error("ERR", "something went wrong"))).Should().BeTrue();
+        (Result<int>.Ok(1) == Result<int>.Fail(_error)).Should().BeFalse();
+        Result<string>.Ok("a").GetHashCode().Should().Be(Result<string>.Ok("a").GetHashCode());
+    }
+
     // ── Ok ────────────────────────────────────────────────────────────────────
 
     [Fact]
