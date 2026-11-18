@@ -20,6 +20,7 @@ public static class StreamQueryExtensions
     /// <remarks>
     /// Handles both setup failures (returned by the handler before any item is produced)
     /// and mid-stream exceptions (wrapped in an <see cref="Error.Internal"/> failure).
+    /// Cancellation is not a failure: an <see cref="OperationCanceledException"/> propagates.
     /// Useful for tests and one-shot scenarios where the full result is needed at once.
     /// </remarks>
     public static async ValueTask<Result<List<TResult>>> CollectStream<TResult>(
@@ -38,7 +39,7 @@ public static class StreamQueryExtensions
                 list.Add(item);
             return list;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return Error.Internal("Stream collection failed.", ex);
         }
@@ -105,11 +106,15 @@ public static class StreamQueryExtensions
         int count,
         [EnumeratorCancellation] CancellationToken ct = default)
     {
+        // Never pull more items from the source than requested: on a live stream an extra
+        // MoveNext would wait for (and trigger the side effects of) an item nobody consumes.
+        if (count <= 0) yield break;
+
         var remaining = count;
         await foreach (var item in source.WithCancellation(ct))
         {
-            if (remaining-- <= 0) yield break;
             yield return item;
+            if (--remaining == 0) yield break;
         }
     }
 }
