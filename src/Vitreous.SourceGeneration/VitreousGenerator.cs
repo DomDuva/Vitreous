@@ -33,9 +33,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     /// <summary>Step names, for incremental-caching tests.</summary>
     internal static class TrackingNames
     {
-        public const string SourceTypes = "VitreousSourceTypes";
-        public const string ReferencedTypes = "VitreousReferencedTypes";
-        public const string Discovery = "VitreousDiscovery";
+        public const string SourceTypes      = "VitreousSourceTypes";
+        public const string ReferencedTypes  = "VitreousReferencedTypes";
+        public const string Discovery        = "VitreousDiscovery";
         public const string GeneratedSources = "VitreousGeneratedSources";
     }
 
@@ -43,23 +43,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     {
         // Messages are usually records (and may be structs); handlers are classes or records.
         // Anything that implements a Vitreous interface has a base list in at least one part.
-        var sourceTypes = context
-            .SyntaxProvider.CreateSyntaxProvider(
+        var sourceTypes = context.SyntaxProvider
+            .CreateSyntaxProvider(
                 predicate: static (node, _) =>
-                    node
-                        is ClassDeclarationSyntax
-                            or RecordDeclarationSyntax
-                            or StructDeclarationSyntax
-                    && ((TypeDeclarationSyntax)node).BaseList is not null,
-                transform: static (ctx, ct) => TransformType(ctx, ct)
-            )
+                    node is ClassDeclarationSyntax or RecordDeclarationSyntax or StructDeclarationSyntax &&
+                    ((TypeDeclarationSyntax)node).BaseList is not null,
+                transform: static (ctx, ct) => TransformType(ctx, ct))
             .Where(static model => model is not null)
             .Select(static (model, _) => model!)
             .WithTrackingName(TrackingNames.SourceTypes)
             .Collect();
 
-        var referencedTypes = context
-            .CompilationProvider.Select(static (compilation, ct) => ScanReferences(compilation, ct))
+        var referencedTypes = context.CompilationProvider
+            .Select(static (compilation, ct) => ScanReferences(compilation, ct))
             .WithTrackingName(TrackingNames.ReferencedTypes);
 
         var discovery = sourceTypes
@@ -71,24 +67,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             .Select(static (result, _) => Emit(result))
             .WithTrackingName(TrackingNames.GeneratedSources);
 
-        context.RegisterSourceOutput(
-            generatedSources,
-            static (spc, files) =>
-            {
-                foreach (var file in files)
-                    spc.AddSource(file.HintName, file.Source);
-            }
-        );
+        context.RegisterSourceOutput(generatedSources, static (spc, files) =>
+        {
+            foreach (var file in files)
+                spc.AddSource(file.HintName, file.Source);
+        });
 
         // Diagnostics need real Locations, which must point into the current compilation's
         // syntax trees. Mapping them back is cheap, so this output may run on every compilation
         // without affecting the cached source generation above.
         var diagnostics = discovery.Select(static (result, _) => result.Diagnostics);
 
-        context.RegisterSourceOutput(
-            diagnostics.Combine(context.CompilationProvider),
-            static (spc, pair) => ReportDiagnostics(spc, pair.Left, pair.Right)
-        );
+        context.RegisterSourceOutput(diagnostics.Combine(context.CompilationProvider), static (spc, pair) =>
+            ReportDiagnostics(spc, pair.Left, pair.Right));
     }
 
     // -------------------------------------------------------------------------
@@ -109,17 +100,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         if (!IsAccessibleFromGeneratedCode(symbol))
             return null;
 
-        var handlers =
-            symbol.TypeKind == TypeKind.Class && !symbol.IsGenericType
-                ? CollectHandlers(symbol, types, LocationInfo.From(SourceLocation(symbol)))
-                : EquatableArray<HandlerInfo>.Empty;
+        var handlers = symbol.TypeKind == TypeKind.Class && !symbol.IsGenericType
+            ? CollectHandlers(symbol, types, LocationInfo.From(SourceLocation(symbol)))
+            : EquatableArray<HandlerInfo>.Empty;
 
         var messages = CollectMessageType(symbol, types, LocationInfo.From(ctx.Node.GetLocation()));
 
-        var diagnostics =
-            symbol.TypeKind == TypeKind.Class
-                ? CheckEnumeratorCancellation(symbol, types)
-                : EquatableArray<DiagnosticInfo>.Empty;
+        var diagnostics = symbol.TypeKind == TypeKind.Class
+            ? CheckEnumeratorCancellation(symbol, types)
+            : EquatableArray<DiagnosticInfo>.Empty;
 
         if (handlers.Count == 0 && messages.Count == 0 && diagnostics.Count == 0)
             return null;
@@ -129,17 +118,11 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     // Per-reference cache: a MetadataReference object is reused across compilations while the
     // reference is unchanged, so its handlers/messages are scanned once instead of per keystroke.
-    private static readonly ConditionalWeakTable<
-        MetadataReference,
-        ReferenceScan
-    > s_referenceScans = new();
+    private static readonly ConditionalWeakTable<MetadataReference, ReferenceScan> s_referenceScans = new();
 
     private sealed class ReferenceScan
     {
-        public ReferenceScan(
-            EquatableArray<HandlerInfo> handlers,
-            EquatableArray<MessageTypeInfo> messages
-        )
+        public ReferenceScan(EquatableArray<HandlerInfo> handlers, EquatableArray<MessageTypeInfo> messages)
         {
             Handlers = handlers;
             Messages = messages;
@@ -163,10 +146,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         {
             ct.ThrowIfCancellationRequested();
 
-            var scan = s_referenceScans.GetValue(
-                reference,
-                r => ScanReference(compilation, r, types, ct)
-            );
+            var scan = s_referenceScans.GetValue(reference, r => ScanReference(compilation, r, types, ct));
             handlers.AddRange(scan.Handlers);
             messages.AddRange(scan.Messages);
         }
@@ -178,20 +158,14 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         Compilation compilation,
         MetadataReference reference,
         WellKnownTypes types,
-        CancellationToken ct
-    )
+        CancellationToken ct)
     {
         // Only assemblies that directly reference Vitreous can contain handler implementations.
         // This skips the BCL, ASP.NET Core and unrelated packages without walking them.
-        if (
-            compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly
-            || !ReferencesVitreous(assembly)
-        )
+        if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly ||
+            !ReferencesVitreous(assembly))
         {
-            return new ReferenceScan(
-                EquatableArray<HandlerInfo>.Empty,
-                EquatableArray<MessageTypeInfo>.Empty
-            );
+            return new ReferenceScan(EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
         }
 
         var handlers = new List<HandlerInfo>();
@@ -200,28 +174,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         return new ReferenceScan(handlers.ToEquatableArray(), messages.ToEquatableArray());
     }
 
-    private static DiscoveryResult Merge(
-        ImmutableArray<TypeModel> sourceTypes,
-        ReferenceModel references
-    )
+    private static DiscoveryResult Merge(ImmutableArray<TypeModel> sourceTypes, ReferenceModel references)
     {
         if (!references.VitreousReferenced)
-            return new DiscoveryResult(
-                false,
-                EquatableArray<HandlerInfo>.Empty,
-                EquatableArray<DiagnosticInfo>.Empty
-            );
+            return new DiscoveryResult(false, EquatableArray<HandlerInfo>.Empty, EquatableArray<DiagnosticInfo>.Empty);
 
         // Partial types produce one model per part that has a base list; keep each entry once.
-        var handlers = sourceTypes
-            .SelectMany(static t => t.Handlers)
+        var handlers = sourceTypes.SelectMany(static t => t.Handlers)
             .Concat(references.Handlers)
             .GroupBy(static h => (h.HandlerFullName, h.MessageFullName, h.Kind))
             .Select(static g => g.First())
             .ToList();
 
-        var messages = sourceTypes
-            .SelectMany(static t => t.Messages)
+        var messages = sourceTypes.SelectMany(static t => t.Messages)
             .Concat(references.Messages)
             .GroupBy(static m => m.MessageFullName)
             .Select(static g => g.First())
@@ -230,12 +195,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var diagnostics = new List<DiagnosticInfo>();
         diagnostics.AddRange(sourceTypes.SelectMany(static t => t.Diagnostics).Distinct());
 
-        var commandHandlers = GroupByMessage(
-            handlers,
-            HandlerKind.Command,
-            HandlerKind.VoidCommand
-        );
-        var queryHandlers = GroupByMessage(handlers, HandlerKind.Query);
+        var commandHandlers     = GroupByMessage(handlers, HandlerKind.Command, HandlerKind.VoidCommand);
+        var queryHandlers       = GroupByMessage(handlers, HandlerKind.Query);
         var streamQueryHandlers = GroupByMessage(handlers, HandlerKind.StreamQuery);
 
         // VIT002 — ambiguous dispatch (multiple handlers per message)
@@ -244,19 +205,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         AddDuplicateDiagnostics(diagnostics, streamQueryHandlers);
 
         // VIT001 — no handler found for a command/query/stream-query type
-        AddNoHandlerDiagnostics(
-            diagnostics,
-            messages,
-            commandHandlers,
-            queryHandlers,
-            streamQueryHandlers
-        );
+        AddNoHandlerDiagnostics(diagnostics, messages, commandHandlers, queryHandlers, streamQueryHandlers);
 
-        return new DiscoveryResult(
-            true,
-            handlers.ToEquatableArray(),
-            diagnostics.ToEquatableArray()
-        );
+        return new DiscoveryResult(true, handlers.ToEquatableArray(), diagnostics.ToEquatableArray());
     }
 
     private static EquatableArray<GeneratedFile> Emit(DiscoveryResult result)
@@ -267,22 +218,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var handlers = result.Handlers.AsImmutableArray();
         return new[]
         {
-            new GeneratedFile(
-                "VitreousServiceCollectionExtensions.g.cs",
-                RegistrationEmitter.EmitServiceCollectionExtensions(handlers)
-            ),
-            new GeneratedFile(
-                "VitreousDispatcher.g.cs",
-                RegistrationEmitter.EmitDispatcher(handlers)
-            ),
+            new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers)),
+            new GeneratedFile("VitreousDispatcher.g.cs", RegistrationEmitter.EmitDispatcher(handlers)),
         }.ToEquatableArray();
     }
 
     private static void ReportDiagnostics(
         SourceProductionContext context,
         EquatableArray<DiagnosticInfo> diagnostics,
-        Compilation compilation
-    )
+        Compilation compilation)
     {
         if (diagnostics.Count == 0)
             return;
@@ -296,18 +240,14 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         foreach (var info in diagnostics)
         {
-            var location =
-                info.Location is { } l && trees.TryGetValue(l.FilePath, out var tree)
-                    ? Location.Create(tree, l.Span)
-                    : Location.None;
+            var location = info.Location is { } l && trees.TryGetValue(l.FilePath, out var tree)
+                ? Location.Create(tree, l.Span)
+                : Location.None;
 
-            context.ReportDiagnostic(
-                Diagnostic.Create(
-                    DiagnosticDescriptors.ById(info.Id),
-                    location,
-                    info.Arguments.Cast<object?>().ToArray()
-                )
-            );
+            context.ReportDiagnostic(Diagnostic.Create(
+                DiagnosticDescriptors.ById(info.Id),
+                location,
+                info.Arguments.Cast<object?>().ToArray()));
         }
     }
 
@@ -322,8 +262,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static EquatableArray<HandlerInfo> CollectHandlers(
         INamedTypeSymbol symbol,
         WellKnownTypes types,
-        LocationInfo? location
-    )
+        LocationInfo? location)
     {
         List<HandlerInfo>? found = null;
         var handlerName = FullName(symbol);
@@ -333,31 +272,21 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             var original = iface.OriginalDefinition;
 
             HandlerKind kind;
-            if (Is(original, types.CommandHandlerWithResult))
-                kind = HandlerKind.Command;
-            else if (Is(original, types.CommandHandlerVoid))
-                kind = HandlerKind.VoidCommand;
-            else if (Is(original, types.QueryHandler))
-                kind = HandlerKind.Query;
-            else if (Is(original, types.NotificationHandler))
-                kind = HandlerKind.Notification;
-            else if (Is(original, types.StreamQueryHandler))
-                kind = HandlerKind.StreamQuery;
-            else
-                continue;
+            if (Is(original, types.CommandHandlerWithResult)) kind = HandlerKind.Command;
+            else if (Is(original, types.CommandHandlerVoid))  kind = HandlerKind.VoidCommand;
+            else if (Is(original, types.QueryHandler))        kind = HandlerKind.Query;
+            else if (Is(original, types.NotificationHandler)) kind = HandlerKind.Notification;
+            else if (Is(original, types.StreamQueryHandler))  kind = HandlerKind.StreamQuery;
+            else continue;
 
-            var resultName =
-                iface.TypeArguments.Length == 2 ? FullName(iface.TypeArguments[1]) : null;
+            var resultName = iface.TypeArguments.Length == 2 ? FullName(iface.TypeArguments[1]) : null;
 
-            (found ??= new List<HandlerInfo>()).Add(
-                new HandlerInfo(
-                    HandlerFullName: handlerName,
-                    MessageFullName: FullName(iface.TypeArguments[0]),
-                    Kind: kind,
-                    ResultFullName: resultName,
-                    Location: location
-                )
-            );
+            (found ??= new List<HandlerInfo>()).Add(new HandlerInfo(
+                HandlerFullName: handlerName,
+                MessageFullName: FullName(iface.TypeArguments[0]),
+                Kind:            kind,
+                ResultFullName:  resultName,
+                Location:        location));
         }
 
         return found is null ? EquatableArray<HandlerInfo>.Empty : found.ToEquatableArray();
@@ -371,8 +300,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static EquatableArray<MessageTypeInfo> CollectMessageType(
         INamedTypeSymbol symbol,
         WellKnownTypes types,
-        LocationInfo? location
-    )
+        LocationInfo? location)
     {
         // Open generic message types cannot be dispatched (no concrete type to match on).
         if (symbol.IsGenericType)
@@ -383,29 +311,21 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             var original = iface.OriginalDefinition;
 
             HandlerKind kind;
-            if (Is(original, types.Command))
-                kind = HandlerKind.Command;
-            else if (Is(original, types.Query))
-                kind = HandlerKind.Query;
-            else if (Is(original, types.StreamQuery))
-                kind = HandlerKind.StreamQuery;
-            else if (Is(original, types.CommandVoid))
-                kind = HandlerKind.VoidCommand;
-            else
-                continue;
+            if (Is(original, types.Command))          kind = HandlerKind.Command;
+            else if (Is(original, types.Query))       kind = HandlerKind.Query;
+            else if (Is(original, types.StreamQuery)) kind = HandlerKind.StreamQuery;
+            else if (Is(original, types.CommandVoid)) kind = HandlerKind.VoidCommand;
+            else continue;
 
             return new[]
             {
                 new MessageTypeInfo(
-                    MessageFullName: FullName(symbol),
-                    MessageTypeName: symbol.Name,
-                    Kind: kind,
-                    ResultFullName: iface.TypeArguments.Length == 1
-                        ? FullName(iface.TypeArguments[0])
-                        : null,
-                    Location: location,
-                    BaseTypeFullNames: BaseTypeNames(symbol)
-                ),
+                    MessageFullName:   FullName(symbol),
+                    MessageTypeName:   symbol.Name,
+                    Kind:              kind,
+                    ResultFullName:    iface.TypeArguments.Length == 1 ? FullName(iface.TypeArguments[0]) : null,
+                    Location:          location,
+                    BaseTypeFullNames: BaseTypeNames(symbol))
             }.ToEquatableArray();
         }
 
@@ -424,17 +344,14 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static bool ReferencesVitreous(IAssemblySymbol asm) =>
         asm.Modules.Any(static m =>
             m.ReferencedAssemblies.Any(static r =>
-                string.Equals(r.Name, "Vitreous", StringComparison.OrdinalIgnoreCase)
-            )
-        );
+                string.Equals(r.Name, "Vitreous", StringComparison.OrdinalIgnoreCase)));
 
     private static void CollectFromNamespace(
         INamespaceSymbol ns,
         WellKnownTypes types,
         List<HandlerInfo> handlers,
         List<MessageTypeInfo> messages,
-        CancellationToken ct
-    )
+        CancellationToken ct)
     {
         foreach (var member in ns.GetMembers())
         {
@@ -461,8 +378,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol type,
         WellKnownTypes types,
         List<HandlerInfo> handlers,
-        List<MessageTypeInfo> messages
-    )
+        List<MessageTypeInfo> messages)
     {
         // Only public types can be referenced from the generated code in another assembly.
         if (type.DeclaredAccessibility != Accessibility.Public)
@@ -488,8 +404,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     private static Dictionary<string, List<HandlerInfo>> GroupByMessage(
         List<HandlerInfo> handlers,
-        params HandlerKind[] kinds
-    )
+        params HandlerKind[] kinds)
     {
         var map = new Dictionary<string, List<HandlerInfo>>();
         foreach (var handler in handlers)
@@ -511,8 +426,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     /// </summary>
     private static void AddDuplicateDiagnostics(
         List<DiagnosticInfo> diagnostics,
-        Dictionary<string, List<HandlerInfo>> handlerMap
-    )
+        Dictionary<string, List<HandlerInfo>> handlerMap)
     {
         foreach (var pair in handlerMap)
         {
@@ -526,21 +440,12 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 string.Join(", ", handlers.Select(static h => $"'{h.HandlerFullName}'")),
             }.ToEquatableArray();
 
-            var locations = handlers
-                .Select(static h => h.Location)
-                .Where(static l => l is not null)
-                .ToList();
+            var locations = handlers.Select(static h => h.Location).Where(static l => l is not null).ToList();
             if (locations.Count == 0)
                 locations.Add(null);
 
             foreach (var location in locations)
-                diagnostics.Add(
-                    new DiagnosticInfo(
-                        DiagnosticDescriptors.MultipleHandlersFound.Id,
-                        location,
-                        arguments
-                    )
-                );
+                diagnostics.Add(new DiagnosticInfo(DiagnosticDescriptors.MultipleHandlersFound.Id, location, arguments));
         }
     }
 
@@ -553,16 +458,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         List<MessageTypeInfo> messageTypes,
         Dictionary<string, List<HandlerInfo>> commandHandlers,
         Dictionary<string, List<HandlerInfo>> queryHandlers,
-        Dictionary<string, List<HandlerInfo>> streamQueryHandlers
-    )
+        Dictionary<string, List<HandlerInfo>> streamQueryHandlers)
     {
         foreach (var msg in messageTypes)
         {
             var map = msg.Kind switch
             {
-                HandlerKind.Query => queryHandlers,
+                HandlerKind.Query       => queryHandlers,
                 HandlerKind.StreamQuery => streamQueryHandlers,
-                _ => commandHandlers,
+                _                       => commandHandlers
             };
 
             if (map.ContainsKey(msg.MessageFullName))
@@ -574,19 +478,16 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
             var handlerKindWord = msg.Kind switch
             {
-                HandlerKind.Query => "Query",
+                HandlerKind.Query       => "Query",
                 HandlerKind.StreamQuery => "StreamQuery",
-                _ => "Command",
+                _                       => "Command"
             };
             var resultSuffix = msg.ResultFullName is not null ? $", {msg.ResultFullName}" : "";
 
-            diagnostics.Add(
-                new DiagnosticInfo(
-                    DiagnosticDescriptors.NoHandlerFound.Id,
-                    msg.Location,
-                    new[] { msg.MessageTypeName, handlerKindWord, resultSuffix }.ToEquatableArray()
-                )
-            );
+            diagnostics.Add(new DiagnosticInfo(
+                DiagnosticDescriptors.NoHandlerFound.Id,
+                msg.Location,
+                new[] { msg.MessageTypeName, handlerKindWord, resultSuffix }.ToEquatableArray()));
         }
     }
 
@@ -597,67 +498,47 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     /// </summary>
     private static EquatableArray<DiagnosticInfo> CheckEnumeratorCancellation(
         INamedTypeSymbol symbol,
-        WellKnownTypes types
-    )
+        WellKnownTypes types)
     {
-        if (
-            types.StreamQueryHandler is null
-            || types.EnumeratorCancellationAttribute is null
-            || types.CancellationToken is null
-        )
+        if (types.StreamQueryHandler is null ||
+            types.EnumeratorCancellationAttribute is null ||
+            types.CancellationToken is null)
         {
             return EquatableArray<DiagnosticInfo>.Empty;
         }
 
         // Only check classes that implement IStreamQueryHandler<,>
-        if (
-            !symbol.AllInterfaces.Any(iface =>
-                Is(iface.OriginalDefinition, types.StreamQueryHandler)
-            )
-        )
+        if (!symbol.AllInterfaces.Any(iface => Is(iface.OriginalDefinition, types.StreamQueryHandler)))
             return EquatableArray<DiagnosticInfo>.Empty;
 
         List<DiagnosticInfo>? found = null;
 
         foreach (var member in symbol.GetMembers().OfType<IMethodSymbol>())
         {
-            if (member.ReturnType is not INamedTypeSymbol returnType)
-                continue;
+            if (member.ReturnType is not INamedTypeSymbol returnType) continue;
 
-            var isAsyncEnumerable =
-                returnType.OriginalDefinition.ToDisplayString()
-                == "System.Collections.Generic.IAsyncEnumerable<T>";
-            if (!isAsyncEnumerable)
-                continue;
+            var isAsyncEnumerable = returnType.OriginalDefinition.ToDisplayString() ==
+                "System.Collections.Generic.IAsyncEnumerable<T>";
+            if (!isAsyncEnumerable) continue;
 
             // [EnumeratorCancellation] only has an effect on async iterators. On any other
             // method the compiler reports CS8424, so requiring it there would be unfixable.
-            if (!IsAsyncIterator(member))
-                continue;
+            if (!IsAsyncIterator(member)) continue;
 
             foreach (var param in member.Parameters)
             {
                 if (!SymbolEqualityComparer.Default.Equals(param.Type, types.CancellationToken))
                     continue;
 
-                var hasAttr = param
-                    .GetAttributes()
-                    .Any(a =>
-                        SymbolEqualityComparer.Default.Equals(
-                            a.AttributeClass,
-                            types.EnumeratorCancellationAttribute
-                        )
-                    );
+                var hasAttr = param.GetAttributes().Any(a =>
+                    SymbolEqualityComparer.Default.Equals(a.AttributeClass, types.EnumeratorCancellationAttribute));
 
                 if (!hasAttr)
                 {
-                    (found ??= new List<DiagnosticInfo>()).Add(
-                        new DiagnosticInfo(
-                            DiagnosticDescriptors.MissingEnumeratorCancellation.Id,
-                            LocationInfo.From(member.Locations.FirstOrDefault()),
-                            new[] { member.Name, symbol.Name }.ToEquatableArray()
-                        )
-                    );
+                    (found ??= new List<DiagnosticInfo>()).Add(new DiagnosticInfo(
+                        DiagnosticDescriptors.MissingEnumeratorCancellation.Id,
+                        LocationInfo.From(member.Locations.FirstOrDefault()),
+                        new[] { member.Name, symbol.Name }.ToEquatableArray()));
                 }
             }
         }
@@ -693,11 +574,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static EquatableArray<string> BaseTypeNames(INamedTypeSymbol symbol)
     {
         var names = new List<string>();
-        for (
-            var t = symbol.BaseType;
-            t is not null && t.SpecialType != SpecialType.System_Object;
-            t = t.BaseType
-        )
+        for (var t = symbol.BaseType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
             names.Add(FullName(t));
         return names.ToEquatableArray();
     }
@@ -718,11 +595,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         foreach (var reference in method.DeclaringSyntaxReferences)
         {
-            var yields = reference
-                .GetSyntax()
+            var yields = reference.GetSyntax()
                 .DescendantNodes(static n =>
-                    n is not LocalFunctionStatementSyntax and not AnonymousFunctionExpressionSyntax
-                )
+                    n is not LocalFunctionStatementSyntax and not AnonymousFunctionExpressionSyntax)
                 .OfType<YieldStatementSyntax>();
 
             if (yields.Any())

@@ -13,28 +13,19 @@ internal sealed class WellKnownTypes
 
     private WellKnownTypes(Compilation compilation)
     {
-        CommandHandlerWithResult = compilation.GetTypeByMetadataName(
-            "Vitreous.Abstractions.ICommandHandler`2"
-        );
-        CommandHandlerVoid = compilation.GetTypeByMetadataName(
-            "Vitreous.Abstractions.ICommandHandler`1"
-        );
-        QueryHandler = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IQueryHandler`2");
-        NotificationHandler = compilation.GetTypeByMetadataName(
-            "Vitreous.Abstractions.INotificationHandler`1"
-        );
-        StreamQueryHandler = compilation.GetTypeByMetadataName(
-            "Vitreous.Abstractions.IStreamQueryHandler`2"
-        );
+        CommandHandlerWithResult = compilation.GetTypeByMetadataName("Vitreous.Abstractions.ICommandHandler`2");
+        CommandHandlerVoid       = compilation.GetTypeByMetadataName("Vitreous.Abstractions.ICommandHandler`1");
+        QueryHandler             = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IQueryHandler`2");
+        NotificationHandler      = compilation.GetTypeByMetadataName("Vitreous.Abstractions.INotificationHandler`1");
+        StreamQueryHandler       = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IStreamQueryHandler`2");
 
-        Command = compilation.GetTypeByMetadataName("Vitreous.Abstractions.ICommand`1");
+        Command     = compilation.GetTypeByMetadataName("Vitreous.Abstractions.ICommand`1");
         CommandVoid = compilation.GetTypeByMetadataName("Vitreous.Abstractions.ICommand");
-        Query = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IQuery`1");
+        Query       = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IQuery`1");
         StreamQuery = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IStreamQuery`1");
 
-        EnumeratorCancellationAttribute = compilation.GetTypeByMetadataName(
-            "System.Runtime.CompilerServices.EnumeratorCancellationAttribute"
-        );
+        EnumeratorCancellationAttribute =
+            compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.EnumeratorCancellationAttribute");
         CancellationToken = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
     }
 
@@ -60,19 +51,13 @@ internal sealed class WellKnownTypes
     /// when it does not reference Vitreous (nothing to generate).
     /// </summary>
     public static WellKnownTypes? Get(Compilation compilation) =>
-        s_cache.GetValue(
-            compilation,
-            static c =>
-            {
-                var types = new WellKnownTypes(c);
-                return
-                    types.CommandHandlerWithResult is null
-                    && types.CommandHandlerVoid is null
-                    && types.QueryHandler is null
-                    && types.NotificationHandler is null
-                    && types.StreamQueryHandler is null
-                    ? null
-                    : types;
-            }
-        );
+        s_cache.GetValue(compilation, static c =>
+        {
+            var types = new WellKnownTypes(c);
+            return types.CommandHandlerWithResult is null && types.CommandHandlerVoid is null &&
+                   types.QueryHandler is null && types.NotificationHandler is null &&
+                   types.StreamQueryHandler is null
+                ? null
+                : types;
+        });
 }

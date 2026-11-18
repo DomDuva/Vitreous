@@ -64,5 +64,6 @@ internal readonly struct EquatableArray<T> : IEquatable<EquatableArray<T>>, IRea
 internal static class EquatableArray
 {
     public static EquatableArray<T> ToEquatableArray<T>(this IEnumerable<T> items)
-        where T : IEquatable<T> => new(items.ToImmutableArray());
+        where T : IEquatable<T> =>
+        new(items.ToImmutableArray());
 }
