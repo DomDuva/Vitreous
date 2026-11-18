@@ -34,14 +34,14 @@ internal static class DiagnosticDescriptors
         description: "Each ICommand<T>, ICommand, and IQuery<T> must have at most one handler.");
 
     /// <summary>
-    /// VIT003 — A method on an <c>IStreamQueryHandler</c> returns <c>IAsyncEnumerable&lt;T&gt;</c>
+    /// VIT003 — An async iterator on an <c>IStreamQueryHandler</c> returns <c>IAsyncEnumerable&lt;T&gt;</c>
     /// and accepts a <c>CancellationToken</c> but is missing <c>[EnumeratorCancellation]</c>.
     /// Without this attribute, callers using <c>.WithCancellation(ct)</c> cannot cancel mid-stream.
     /// </summary>
     internal static readonly DiagnosticDescriptor MissingEnumeratorCancellation = new(
         id: "VIT003",
         title: "Missing [EnumeratorCancellation] on stream handler",
-        messageFormat: "Method '{0}' on '{1}' returns IAsyncEnumerable<T> and has a CancellationToken parameter, but it is not decorated with [EnumeratorCancellation]. Without this attribute, callers using .WithCancellation() cannot cancel mid-stream.",
+        messageFormat: "Async iterator '{0}' on '{1}' returns IAsyncEnumerable<T> and has a CancellationToken parameter, but it is not decorated with [EnumeratorCancellation]. Without this attribute, callers using .WithCancellation() cannot cancel mid-stream.",
         category: Category,
         defaultSeverity: DiagnosticSeverity.Warning,
         isEnabledByDefault: true,

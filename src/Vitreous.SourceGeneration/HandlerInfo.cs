@@ -24,7 +24,8 @@ internal sealed record MessageTypeInfo(
     string MessageTypeName,
     HandlerKind Kind,
     string? ResultFullName,  // null for ICommand (void)
-    Location Location        // Location.None for types discovered in referenced assemblies
+    Location Location,       // Location.None for types discovered in referenced assemblies
+    IReadOnlyList<string> BaseTypeFullNames // nearest first; a base type's handler also handles this message
 );
 
 internal enum HandlerKind

@@ -87,10 +87,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var seenSymbols   = new HashSet<INamedTypeSymbol>(SymbolEqualityComparer.Default);
 
         // Track message types that have handlers (to detect missing / duplicate registrations)
-        // key = messageFullName, value = list of handler full names
-        var commandHandlers     = new Dictionary<string, List<string>>();
-        var queryHandlers       = new Dictionary<string, List<string>>();
-        var streamQueryHandlers = new Dictionary<string, List<string>>();
+        // key = messageFullName, value = list of (handler full name, handler location)
+        var commandHandlers     = new Dictionary<string, List<HandlerRef>>();
+        var queryHandlers       = new Dictionary<string, List<HandlerRef>>();
+        var streamQueryHandlers = new Dictionary<string, List<HandlerRef>>();
 
         // ── Pass 1: current project's syntax trees ────────────────────────────
         foreach (var classDecl in classes)
@@ -201,9 +201,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iNotificationHandler,
         INamedTypeSymbol? iStreamQueryHandler,
         List<HandlerInfo> discovered,
-        Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers,
-        Dictionary<string, List<string>> streamQueryHandlers)
+        Dictionary<string, List<HandlerRef>> commandHandlers,
+        Dictionary<string, List<HandlerRef>> queryHandlers,
+        Dictionary<string, List<HandlerRef>> streamQueryHandlers)
     {
         foreach (var iface in symbol.AllInterfaces)
         {
@@ -225,7 +225,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
 
                 discovered.Add(info);
-                AddToMultimap(commandHandlers, info.MessageFullName, info.HandlerFullName);
+                AddToMultimap(commandHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
                 continue;
             }
 
@@ -250,7 +250,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     ResultFullName:   null);
 
                 discovered.Add(info);
-                AddToMultimap(commandHandlers, info.MessageFullName, info.HandlerFullName);
+                AddToMultimap(commandHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
                 continue;
             }
 
@@ -270,7 +270,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
 
                 discovered.Add(info);
-                AddToMultimap(queryHandlers, info.MessageFullName, info.HandlerFullName);
+                AddToMultimap(queryHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
                 continue;
             }
 
@@ -306,7 +306,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     ResultFullName:   resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
 
                 discovered.Add(info);
-                AddToMultimap(streamQueryHandlers, info.MessageFullName, info.HandlerFullName);
+                AddToMultimap(streamQueryHandlers, info.MessageFullName, new HandlerRef(info.HandlerFullName, SourceLocation(symbol)));
             }
         }
     }
@@ -348,7 +348,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.Command,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -362,7 +363,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.Query,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -376,7 +378,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.StreamQuery,
                     ResultFullName:  resultType.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""),
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
 
@@ -390,7 +393,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                     MessageTypeName: symbol.Name,
                     Kind:            HandlerKind.VoidCommand,
                     ResultFullName:  null,
-                    Location:        location));
+                    Location:        location,
+                    BaseTypeFullNames: BaseTypeNames(symbol)));
                 return;
             }
         }
@@ -416,9 +420,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iQuery,
         INamedTypeSymbol? iStreamQuery,
         List<HandlerInfo> discovered,
-        Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers,
-        Dictionary<string, List<string>> streamQueryHandlers,
+        Dictionary<string, List<HandlerRef>> commandHandlers,
+        Dictionary<string, List<HandlerRef>> queryHandlers,
+        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
         List<MessageTypeInfo> messageTypes)
     {
         foreach (var reference in compilation.References)
@@ -478,9 +482,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iQuery,
         INamedTypeSymbol? iStreamQuery,
         List<HandlerInfo> discovered,
-        Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers,
-        Dictionary<string, List<string>> streamQueryHandlers,
+        Dictionary<string, List<HandlerRef>> commandHandlers,
+        Dictionary<string, List<HandlerRef>> queryHandlers,
+        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
         List<MessageTypeInfo> messageTypes)
     {
         foreach (var member in ns.GetMembers())
@@ -544,9 +548,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         INamedTypeSymbol? iQuery,
         INamedTypeSymbol? iStreamQuery,
         List<HandlerInfo> discovered,
-        Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers,
-        Dictionary<string, List<string>> streamQueryHandlers,
+        Dictionary<string, List<HandlerRef>> commandHandlers,
+        Dictionary<string, List<HandlerRef>> queryHandlers,
+        Dictionary<string, List<HandlerRef>> streamQueryHandlers,
         List<MessageTypeInfo> messageTypes)
     {
         // Only public types can be referenced from the generated code in another assembly.
@@ -610,26 +614,39 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     // -------------------------------------------------------------------------
 
     /// <summary>
-    /// Emits VIT002 for every message type that has more than one handler registered.
+    /// Emits VIT002 for every message type that has more than one handler registered,
+    /// once per handler declared in source (so each one gets a squiggle), or once without
+    /// a location when every handler lives in a referenced assembly.
     /// </summary>
     private static void ReportDuplicateDiagnostics(
         SourceProductionContext context,
-        Dictionary<string, List<string>> handlerMap)
+        Dictionary<string, List<HandlerRef>> handlerMap)
     {
         foreach (var pair in handlerMap)
         {
-            var messageType  = pair.Key;
-            var handlerNames = pair.Value;
-            if (handlerNames.Count <= 1)
+            var messageType = pair.Key;
+            var handlers    = pair.Value;
+            if (handlers.Count <= 1)
                 continue;
 
-            var handlersStr = string.Join(", ", handlerNames.Select(n => $"'{n}'"));
+            var handlersStr = string.Join(", ", handlers.Select(h => $"'{h.FullName}'"));
 
-            context.ReportDiagnostic(Diagnostic.Create(
-                DiagnosticDescriptors.MultipleHandlersFound,
-                Location.None,
-                messageType,
-                handlersStr));
+            var sourceLocations = handlers
+                .Select(h => h.Location)
+                .Where(l => l.IsInSource)
+                .ToList();
+
+            if (sourceLocations.Count == 0)
+                sourceLocations.Add(Location.None);
+
+            foreach (var location in sourceLocations)
+            {
+                context.ReportDiagnostic(Diagnostic.Create(
+                    DiagnosticDescriptors.MultipleHandlersFound,
+                    location,
+                    messageType,
+                    handlersStr));
+            }
         }
     }
 
@@ -640,9 +657,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static void ReportNoHandlerDiagnostics(
         SourceProductionContext context,
         List<MessageTypeInfo> messageTypes,
-        Dictionary<string, List<string>> commandHandlers,
-        Dictionary<string, List<string>> queryHandlers,
-        Dictionary<string, List<string>> streamQueryHandlers)
+        Dictionary<string, List<HandlerRef>> commandHandlers,
+        Dictionary<string, List<HandlerRef>> queryHandlers,
+        Dictionary<string, List<HandlerRef>> streamQueryHandlers)
     {
         foreach (var msg in messageTypes)
         {
@@ -654,6 +671,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             };
 
             if (map.ContainsKey(msg.MessageFullName))
+                continue;
+
+            // The dispatcher falls back to the nearest base type that has a handler.
+            if (msg.BaseTypeFullNames.Any(map.ContainsKey))
                 continue;
 
             var handlerKindWord = msg.Kind switch
@@ -674,7 +695,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     }
 
     /// <summary>
-    /// VIT003 — checks that every method on a stream query handler class that returns
+    /// VIT003 — checks that every async iterator on a stream query handler class that returns
     /// <c>IAsyncEnumerable&lt;T&gt;</c> and accepts a <c>CancellationToken</c> parameter
     /// decorates that parameter with <c>[EnumeratorCancellation]</c>.
     /// </summary>
@@ -704,6 +725,10 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             var isAsyncEnumerable = returnType.OriginalDefinition.ToDisplayString() ==
                 "System.Collections.Generic.IAsyncEnumerable<T>";
             if (!isAsyncEnumerable) continue;
+
+            // [EnumeratorCancellation] only has an effect on async iterators. On any other
+            // method the compiler reports CS8424, so requiring it there would be unfixable.
+            if (!IsAsyncIterator(member)) continue;
 
             // Find a CancellationToken parameter missing [EnumeratorCancellation]
             foreach (var param in member.Parameters)
@@ -747,12 +772,52 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     }
 
     private static void AddToMultimap(
-        Dictionary<string, List<string>> map,
+        Dictionary<string, List<HandlerRef>> map,
         string key,
-        string value)
+        HandlerRef value)
     {
         if (!map.TryGetValue(key, out var list))
-            map[key] = list = new List<string>();
+            map[key] = list = new List<HandlerRef>();
         list.Add(value);
+    }
+
+    /// <summary>Fully-qualified names of the base classes of <paramref name="symbol"/>, nearest first.</summary>
+    private static IReadOnlyList<string> BaseTypeNames(INamedTypeSymbol symbol)
+    {
+        var names = new List<string>();
+        for (var t = symbol.BaseType; t is not null && t.SpecialType != SpecialType.System_Object; t = t.BaseType)
+            names.Add(t.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", ""));
+        return names;
+    }
+
+    /// <summary>The first source location of <paramref name="symbol"/>, or <see cref="Location.None"/>.</summary>
+    private static Location SourceLocation(ISymbol symbol) =>
+        symbol.Locations.FirstOrDefault(static l => l.IsInSource) ?? Location.None;
+
+    /// <summary>A handler registered for a message, used for VIT001/VIT002 bookkeeping.</summary>
+    private readonly record struct HandlerRef(string FullName, Location Location);
+
+    /// <summary>
+    /// Returns <see langword="true"/> when <paramref name="method"/> is declared in source as an
+    /// <c>async</c> iterator, i.e. has the <c>async</c> modifier and a <c>yield</c> statement in
+    /// its own body (not in a nested local function or lambda).
+    /// </summary>
+    private static bool IsAsyncIterator(IMethodSymbol method)
+    {
+        if (!method.IsAsync)
+            return false;
+
+        foreach (var reference in method.DeclaringSyntaxReferences)
+        {
+            var yields = reference.GetSyntax()
+                .DescendantNodes(static n =>
+                    n is not LocalFunctionStatementSyntax and not AnonymousFunctionExpressionSyntax)
+                .OfType<YieldStatementSyntax>();
+
+            if (yields.Any())
+                return true;
+        }
+
+        return false;
     }
 }
