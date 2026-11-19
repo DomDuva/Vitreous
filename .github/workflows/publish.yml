@@ -1,12 +1,10 @@
 name: Publish to NuGet
 
-# Triggers only when a version tag (e.g. v0.1.0) is pushed.
-# Also supports manual re-runs from the GitHub Actions UI without re-tagging.
+# Runs when a GitHub release is published (its tag, e.g. v0.1.0, is the version).
+# Also supports manual re-runs from the GitHub Actions UI for an existing tag.
 on:
-  push:
-    tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+'
-      - 'v[0-9]+.[0-9]+.[0-9]+-*'   # pre-release tags: v0.1.0-beta.1
+  release:
+    types: [published]
   workflow_dispatch:
     inputs:
       tag:
@@ -18,23 +16,36 @@ jobs:
     name: Build, Test & Publish
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write # attach the packages to the release
       id-token: write # NuGet trusted publishing (OIDC)
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          ref: ${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
 
       # Strip the leading 'v' from the tag (v0.1.0-beta.1 → 0.1.0-beta.1).
-      # For push triggers: github.ref_name is the tag (e.g. v0.1.0-beta.1).
-      # For workflow_dispatch: inputs.tag is used instead.
+      # A tag with a pre-release suffix must be published as a GitHub pre-release, and vice versa.
       - name: Resolve version
         id: version
+        env:
+          TAG: ${{ inputs.tag || github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
         run: |
-          RAW=${{ inputs.tag || github.ref_name }}
-          echo "value=${RAW#v}" >> $GITHUB_OUTPUT
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-.+)?$ ]]; then
+            echo "::error::'$TAG' is not a version tag (expected v1.2.3 or v1.2.3-beta.1)"
+            exit 1
+          fi
+          if [[ -n "$PRERELEASE" ]]; then
+            SUFFIX=false; [[ "$TAG" == *-* ]] && SUFFIX=true
+            if [[ "$SUFFIX" != "$PRERELEASE" ]]; then
+              echo "::error::'$TAG' and the release's pre-release flag ($PRERELEASE) disagree"
+              exit 1
+            fi
+          fi
+          echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
 
       # All three SDKs so the test projects run on every target framework.
       - name: Setup .NET
@@ -73,12 +84,10 @@ jobs:
           done
 
       # Trusted publishing: exchanges the GitHub OIDC token for a short-lived API key.
-      # Requires a trusted publishing policy for this repo/workflow on nuget.org and the
+      # Requires the trusted publishing policy for this repo/workflow on nuget.org and the
       # NUGET_USER repository variable (the nuget.org profile name, not the email).
-      # Until NUGET_USER is set, the NUGET_API_KEY secret is used instead.
       - name: NuGet login (OIDC)
         id: login
-        if: vars.NUGET_USER != ''
         uses: NuGet/login@v1
         with:
           user: ${{ vars.NUGET_USER }}
@@ -86,12 +95,19 @@ jobs:
       # Pushing a .nupkg also pushes the matching .snupkg found next to it.
       - name: Push packages to NuGet.org
         env:
-          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY || secrets.NUGET_API_KEY }}
+          NUGET_API_KEY: ${{ steps.login.outputs.NUGET_API_KEY }}
         run: |
           dotnet nuget push ./artifacts/*.nupkg \
             --api-key "$NUGET_API_KEY" \
             --source https://api.nuget.org/v3/index.json \
             --skip-duplicate
+
+      - name: Attach packages to the release
+        if: github.event_name == 'release'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: gh release upload "$TAG" ./artifacts/*.nupkg ./artifacts/*.snupkg --clobber
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
