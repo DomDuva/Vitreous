@@ -26,6 +26,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - VIT003 only checks async iterators (it fired on helpers where the attribute causes CS8424); VIT002 is reported at each duplicate handler.
 - A Redis outage no longer makes every dispatch fail: the connection is resolved lazily, does not abort on connect failure, and fails fast while disconnected.
 - Redis tag Sets expire with their longest-lived entry instead of growing forever; tag removal no longer blocks Redis.
+- The source generator loads on every SDK that can build `net8.0` (from 8.0.100). It was built against Roslyn 4.14, so the .NET 8 SDK and the .NET 9 SDK before 9.0.300 skipped it with warning CS9057, and `AddVitreousHandlers()` threw at startup.
 - DevUI: faulted streams are shown as failed, slow live clients are dropped instead of buffering without limit, and the browser keeps at most `TraceBufferCapacity` traces.
 
 ### Added
