@@ -170,6 +170,35 @@ internal static class GeneratorTestHelper
     }
 
     /// <summary>
+    /// Runs the generator over <paramref name="source"/> compiled against <paramref name="vitreous"/>
+    /// instead of the Vitreous built from this repository (e.g. an older release), and returns the
+    /// generated sources together with every error.
+    /// </summary>
+    internal static (ImmutableArray<GeneratedSourceResult> GeneratedSources, ImmutableArray<Diagnostic> Errors) CompileAgainstVitreous(
+        string source,
+        MetadataReference vitreous)
+    {
+        var references = s_defaultRefs.Value
+            .Where(static r => !string.Equals(Path.GetFileName(r.Display), "Vitreous.dll", StringComparison.OrdinalIgnoreCase))
+            .Append(vitreous);
+
+        var compilation = CSharpCompilation.Create(
+            "TestAssembly",
+            syntaxTrees: [CSharpSyntaxTree.ParseText(source)],
+            references: references,
+            options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary, nullableContextOptions: NullableContextOptions.Enable));
+
+        var driver = CSharpGeneratorDriver.Create(new Vitreous.SourceGeneration.VitreousGenerator())
+            .RunGeneratorsAndUpdateCompilation(compilation, out var updated, out var generatorDiagnostics);
+
+        var errors = generatorDiagnostics.Concat(updated.GetDiagnostics())
+            .Where(static d => d.Severity == DiagnosticSeverity.Error)
+            .ToImmutableArray();
+
+        return (driver.GetRunResult().Results.SelectMany(static r => r.GeneratedSources).ToImmutableArray(), errors);
+    }
+
+    /// <summary>
     /// Compiles <paramref name="source"/> with the generator, emits it, and loads it into a fresh
     /// load context so tests can call the generated <c>AddVitreousHandlers()</c> and dispatch through
     /// the generated dispatcher. Vitreous and DI types are shared with the test process.
