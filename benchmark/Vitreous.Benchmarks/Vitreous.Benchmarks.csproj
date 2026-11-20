@@ -3,10 +3,10 @@
   <PropertyGroup>
     <OutputType>Exe</OutputType>
     <!--
-      Target net9.0 for stable BenchmarkDotNet support.
-      BenchmarkDotNet 0.14.x requires a recognized LTS or STS runtime.
+      One build per runtime so BenchmarkDotNet can run them side by side
+      (run.sh passes the runtimes option with net10.0 and net11.0).
     -->
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFrameworks>net10.0;net11.0</TargetFrameworks>
     <RootNamespace>Vitreous.Benchmarks</RootNamespace>
     <AssemblyName>Vitreous.Benchmarks</AssemblyName>
     <Nullable>enable</Nullable>

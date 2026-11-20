@@ -61,3 +61,7 @@ lcov.info
 
 # ── Benchmark artifacts ───────────────────────────────────────────────────────
 BenchmarkDotNet.Artifacts/
+.bdn/
+
+# ── Tooling ───────────────────────────────────────────────────────────────────
+.playwright-mcp/

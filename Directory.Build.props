@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
-    <LangVersion>preview</LangVersion>
+    <!-- Every runtime package and test project targets all of these. Add new TFMs here. -->
+    <VitreousTargetFrameworks>net8.0;net9.0;net10.0;net11.0</VitreousTargetFrameworks>
+    <LangVersion>latest</LangVersion>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
@@ -22,5 +24,15 @@
   <!-- MinVer: derive PackageVersion from git tags automatically -->
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <PackageReference Include="MinVer" PrivateAssets="all" />
+  </ItemGroup>
+
+  <!--
+    Public API tracking (RS0016/RS0017) for the runtime packages. New public API goes in
+    PublicAPI.Unshipped.txt; each release moves it to PublicAPI.Shipped.txt.
+  -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true' and '$(OutputType)' == 'Library' and '$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

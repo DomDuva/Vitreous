@@ -1,6 +1,5 @@
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
-using BenchmarkDotNet.Jobs;
 using BenchmarkDotNet.Reports;
 using Perfolizer.Metrology;
 
@@ -20,8 +19,7 @@ public sealed class BenchmarkConfig : ManualConfig
 {
     public BenchmarkConfig()
     {
-        AddJob(Job.Default);
-
+        // No job here: BenchmarkDotNet uses the default job, or one per --runtimes value.
         WithSummaryStyle(SummaryStyle.Default
             .WithTimeUnit(Perfolizer.Horology.TimeUnit.Nanosecond)
             .WithSizeUnit(SizeUnit.B));

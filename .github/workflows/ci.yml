@@ -5,6 +5,9 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  CI_PACKAGE_VERSION: 0.0.0-ci.${{ github.run_number }}
+
 jobs:
   build-and-test:
     name: Build & Test
@@ -27,17 +30,18 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0 # MinVer needs tags to compute a version
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.x
             9.x
             10.x
+            11.x
 
       - name: Restore
         run: dotnet restore
@@ -50,10 +54,69 @@ jobs:
 
       # Packs every src/ project and verifies the source generator is laid out as an
       # analyzer (analyzers/dotnet/cs) — if it ends up under lib/ the generator never runs.
+      # A fixed version (instead of MinVer's) lets the smoke test reference the packages.
       - name: Pack & verify analyzer layout
         run: |
           for proj in src/*/*.csproj; do
-            dotnet pack "$proj" --configuration Release --no-build --output ./artifacts
+            dotnet pack "$proj" --configuration Release --no-build \
+              -p:MinVerSkip=true \
+              -p:Version=${{ env.CI_PACKAGE_VERSION }} \
+              -p:PackageVersion=${{ env.CI_PACKAGE_VERSION }} \
+              --output ./artifacts
           done
           unzip -l ./artifacts/Vitreous.SourceGeneration.*.nupkg | grep -q "analyzers/dotnet/cs/Vitreous.SourceGeneration.dll" \
             || { echo "::error::Vitreous.SourceGeneration.dll is not packed under analyzers/dotnet/cs"; exit 1; }
+
+      - name: Upload packages
+        uses: actions/upload-artifact@v7
+        with:
+          name: ci-packages
+          path: ./artifacts/*.nupkg
+          retention-days: 3
+
+  # Builds a consumer app against the packed nupkgs on the oldest SDK of each band. The
+  # compiler silently skips a generator built against a newer Roslyn (CS9057), which unit
+  # tests cannot see because they load the generator directly.
+  package-smoke:
+    name: Package smoke test (SDK ${{ matrix.sdk }})
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { sdk: 8.0.100, tfm: net8.0 }   # oldest SDK for the oldest target (Roslyn 4.8)
+          - { sdk: 9.0.100, tfm: net9.0 }   # the band that skipped the 0.2.0-beta generator
+          - { sdk: 10.0.100, tfm: net10.0 }
+          - { sdk: 11.0.100, tfm: net11.0 }
+    defaults:
+      run:
+        working-directory: tests/Vitreous.PackageSmokeTest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-packages
+          path: ./artifacts
+
+      - name: Pin SDK ${{ matrix.sdk }}
+        run: echo '{"sdk":{"version":"${{ matrix.sdk }}","rollForward":"disable"}}' > global.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: tests/Vitreous.PackageSmokeTest/global.json
+
+      - name: Build against the packages
+        run: |
+          dotnet --version
+          dotnet build -c Release \
+            -p:SmokeTargetFramework=${{ matrix.tfm }} \
+            -p:VitreousPackageVersion=${{ env.CI_PACKAGE_VERSION }}
+
+      - name: Run
+        run: dotnet bin/Release/${{ matrix.tfm }}/Vitreous.PackageSmokeTest.dll

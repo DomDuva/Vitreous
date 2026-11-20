@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>net9.0</TargetFramework>
+    <TargetFramework>net11.0</TargetFramework>
     <RootNamespace>BuildTime.VitreousApp</RootNamespace>
     <AssemblyName>BuildTime.Vitreous</AssemblyName>
     <Nullable>enable</Nullable>

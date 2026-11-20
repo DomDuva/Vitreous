@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>$(VitreousTargetFrameworks)</TargetFrameworks>
     <RootNamespace>Vitreous.DevUI</RootNamespace>
     <AssemblyName>Vitreous.DevUI</AssemblyName>
     <Description>Developer UI for Vitreous — real-time command/query observability dashboard via Server-Sent Events.</Description>

@@ -1,0 +1,42 @@
+#nullable enable
+Vitreous.Caching.Abstractions.ICacheableQuery<TResult>
+Vitreous.Caching.Abstractions.ICacheableQuery<TResult>.AbsoluteExpiration.get -> System.TimeSpan?
+Vitreous.Caching.Abstractions.ICacheableQuery<TResult>.CacheKey.get -> string!
+Vitreous.Caching.Abstractions.ICacheableQuery<TResult>.SlidingExpiration.get -> System.TimeSpan?
+Vitreous.Caching.Abstractions.ICacheableQuery<TResult>.Tags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Vitreous.Caching.Abstractions.IInvalidatesCache
+Vitreous.Caching.Abstractions.IInvalidatesCache.CacheKeys.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Vitreous.Caching.Abstractions.IInvalidatesCache.InvalidatesTags.get -> System.Collections.Generic.IReadOnlyList<string!>!
+Vitreous.Caching.Abstractions.IVitreousCache
+Vitreous.Caching.Abstractions.IVitreousCache.GetAsync<T>(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<(bool Hit, T? Value)>
+Vitreous.Caching.Abstractions.IVitreousCache.RemoveAsync(string! key, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Caching.Abstractions.IVitreousCache.RemoveByTagAsync(string! tag, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Caching.Abstractions.IVitreousCache.SetAsync<T>(string! key, T value, System.Collections.Generic.IReadOnlyList<string!>! tags, Microsoft.Extensions.Caching.Distributed.DistributedCacheEntryOptions! options, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Caching.Abstractions.IVitreousCacheSerializer
+Vitreous.Caching.Abstractions.IVitreousCacheSerializer.Serialize<T>(T value) -> byte[]!
+Vitreous.Caching.Abstractions.IVitreousCacheSerializer.TryDeserialize<T>(System.ReadOnlySpan<byte> data, out T? value) -> bool
+Vitreous.Caching.Behaviors.CacheInvalidationBehavior<TMessage, TResult>
+Vitreous.Caching.Behaviors.CacheInvalidationBehavior<TMessage, TResult>.CacheInvalidationBehavior(Vitreous.Caching.Abstractions.IVitreousCache! cache, Microsoft.Extensions.Logging.ILogger<Vitreous.Caching.Behaviors.CacheInvalidationBehavior<TMessage, TResult>!>! logger) -> void
+Vitreous.Caching.Behaviors.CacheInvalidationBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>
+Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>.CachingBehavior(Vitreous.Caching.Abstractions.IVitreousCache! cache, Microsoft.Extensions.Logging.ILogger<Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>!>! logger) -> void
+Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>.CachingBehavior(Vitreous.Caching.Abstractions.IVitreousCache! cache, Microsoft.Extensions.Logging.ILogger<Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>!>! logger, Vitreous.Caching.VitreousCachingOptions? options) -> void
+Vitreous.Caching.Behaviors.CachingBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Caching.CacheKeys
+Vitreous.Caching.Serialization.SystemTextJsonVitreousCacheSerializer
+Vitreous.Caching.Serialization.SystemTextJsonVitreousCacheSerializer.Serialize<T>(T value) -> byte[]!
+Vitreous.Caching.Serialization.SystemTextJsonVitreousCacheSerializer.SystemTextJsonVitreousCacheSerializer(System.Text.Json.JsonSerializerOptions? options = null) -> void
+Vitreous.Caching.Serialization.SystemTextJsonVitreousCacheSerializer.TryDeserialize<T>(System.ReadOnlySpan<byte> data, out T? value) -> bool
+Vitreous.Caching.VitreousCachingOptions
+Vitreous.Caching.VitreousCachingOptions.DefaultAbsoluteExpiration.get -> System.TimeSpan?
+Vitreous.Caching.VitreousCachingOptions.DefaultAbsoluteExpiration.set -> void
+Vitreous.Caching.VitreousCachingOptions.EnableStampedeProtection.get -> bool
+Vitreous.Caching.VitreousCachingOptions.EnableStampedeProtection.set -> void
+Vitreous.Caching.VitreousCachingOptions.JsonSerializerOptions.get -> System.Text.Json.JsonSerializerOptions!
+Vitreous.Caching.VitreousCachingOptions.JsonSerializerOptions.set -> void
+Vitreous.Caching.VitreousCachingOptions.KeyPrefix.get -> string!
+Vitreous.Caching.VitreousCachingOptions.KeyPrefix.set -> void
+Vitreous.Caching.VitreousCachingOptions.VitreousCachingOptions() -> void
+Vitreous.Caching.VitreousCachingServiceCollectionExtensions
+static Vitreous.Caching.CacheKeys.Combine(string? prefix, string! key) -> string!
+static Vitreous.Caching.VitreousCachingServiceCollectionExtensions.AddVitreousCaching(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.Caching.VitreousCachingOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
