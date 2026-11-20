@@ -66,4 +66,5 @@ echo ""
 
 # The host process runs on .NET 11; BenchmarkDotNet launches one child process per runtime.
 dotnet run -c Release --project "$BENCH_PROJECT" --no-build -f net11.0 -- \
-    --runtimes net10.0 net11.0 "$@"
+    --runtimes net10.0 net11.0 \
+    --artifacts "$SCRIPT_DIR/Vitreous.Benchmarks/BenchmarkDotNet.Artifacts" "$@"
