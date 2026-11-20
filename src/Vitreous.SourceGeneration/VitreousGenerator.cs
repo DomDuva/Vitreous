@@ -553,8 +553,14 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static bool Is(INamedTypeSymbol candidate, INamedTypeSymbol? wellKnown) =>
         wellKnown is not null && SymbolEqualityComparer.Default.Equals(candidate, wellKnown);
 
+    // Keeps nullable annotations (IQuery<List<string?>>) so the emitted handler types match the
+    // user's declarations; dropping them raises CS8631 in nullable-enabled projects.
+    private static readonly SymbolDisplayFormat s_fullNameFormat =
+        SymbolDisplayFormat.FullyQualifiedFormat.AddMiscellaneousOptions(
+            SymbolDisplayMiscellaneousOptions.IncludeNullableReferenceTypeModifier);
+
     private static string FullName(ITypeSymbol symbol) =>
-        symbol.ToDisplayString(SymbolDisplayFormat.FullyQualifiedFormat).Replace("global::", "");
+        symbol.ToDisplayString(s_fullNameFormat).Replace("global::", "");
 
     /// <summary>
     /// Returns <see langword="true"/> when <paramref name="symbol"/> and all of its containing
