@@ -80,7 +80,7 @@ That's it. No attributes, no assembly scanning, and the compiler warns you (`VIT
 
 ## Performance
 
-Benchmarks run on .NET 9.0.23, Intel Xeon Silver 4114 (2.2 GHz). Source: [`benchmark/Vitreous.Benchmarks`](benchmark/Vitreous.Benchmarks).
+Benchmarks run on .NET 11.0.0, Intel Xeon Silver 4114 (2.2 GHz). Source: [`benchmark/Vitreous.Benchmarks`](benchmark/Vitreous.Benchmarks).
 
 MediatR is benchmarked at its default Transient handler lifetime; Vitreous with `DefaultHandlerLifetime = Singleton`. Switching MediatR to Singleton makes no meaningful difference to dispatch latency or allocation.
 
@@ -88,13 +88,13 @@ MediatR is benchmarked at its default Transient handler lifetime; Vitreous with 
 
 | Scenario | MediatR | Vitreous |
 |---|---|---|
-| Send query | 219.8 ns / 264 B | 118.6 ns / **0 B** |
-| Send query (200+ handlers registered) | 214.5 ns / 264 B | 121.4 ns / **0 B** |
-| Send void command | 198.5 ns / 192 B | 95.9 ns / **0 B** |
-| Publish notification | 277.7 ns / 288 B | 194.6 ns / **0 B** |
-| Send query (+ 1 behavior) | 363.0 ns / 448 B | 207.7 ns / 64 B |
-| Stream query (1 item) | 449.8 ns / 512 B | 262.0 ns / 120 B |
-| Stream query (10 items) | 1,110.7 ns / 512 B | 555.3 ns / 120 B |
+| Send query | 159.2 ns / 192 B | 102.0 ns / **0 B** |
+| Send query (200+ handlers registered) | 146.9 ns / 192 B | 109.1 ns / **0 B** |
+| Send void command | 166.6 ns / 120 B | 86.9 ns / **0 B** |
+| Publish notification | 224.0 ns / 272 B | 194.4 ns / **0 B** |
+| Send query (+ 1 behavior) | 319.6 ns / 368 B | 128.2 ns / 56 B |
+| Stream query (1 item) | 401.5 ns / 496 B | 186.2 ns / 120 B |
+| Stream query (10 items) | 898.9 ns / 496 B | 434.5 ns / 120 B |
 
 Dispatch is one lookup on the message's concrete type, so its cost does not grow with the number of registered handlers.
 
@@ -104,10 +104,10 @@ The benchmark project registers 200+ handlers per library.
 
 | | MediatR | Vitreous |
 |---|---|---|
-| Time | 11,040,401 ns | 77,916 ns |
-| Allocated | 2,953,836 B | 58,400 B |
+| Time | 10,061,341 ns | 67,193 ns |
+| Allocated | 2,893,031 B | 58,416 B |
 
-Vitreous is **~140× faster** to start and allocates **~50× less** — because `AddVitreousHandlers()` emits direct registration calls at build time with no assembly scanning or reflection.
+Vitreous is **~150× faster** to start and allocates **~50× less** — because `AddVitreousHandlers()` emits direct registration calls at build time with no assembly scanning or reflection.
 
 ---
 
