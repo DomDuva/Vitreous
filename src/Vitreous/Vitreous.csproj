@@ -1,7 +1,7 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-    <TargetFrameworks>net8.0;net9.0;net10.0</TargetFrameworks>
+    <TargetFrameworks>$(VitreousTargetFrameworks)</TargetFrameworks>
     <RootNamespace>Vitreous</RootNamespace>
     <AssemblyName>Vitreous</AssemblyName>
     <Description>A high-performance, source-generated in-process mediator for .NET with a first-class Result type.</Description>
