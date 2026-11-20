@@ -11,6 +11,9 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="OpenTelemetry.Extensions.Hosting" />
+    <PackageReference Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" />
+    <PackageReference Include="OpenTelemetry.Instrumentation.AspNetCore" />
     <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
     <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj"
                       OutputItemType="Analyzer"
