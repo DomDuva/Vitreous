@@ -28,9 +28,6 @@ internal sealed class ReflectionSender : ISender
     private static readonly MethodInfo _executeStream =
         typeof(ReflectionSender).GetMethod(nameof(ExecuteStream), Flags)!;
 
-    private delegate ValueTask<Result<IAsyncEnumerable<TResult>>> StreamInvoker<TResult>(
-        IServiceProvider services, IStreamQuery<TResult> query, CancellationToken ct);
-
     private readonly IServiceProvider _services;
 
     private enum DispatchKind { Command, VoidCommand, Query, Stream }
@@ -55,7 +52,9 @@ internal sealed class ReflectionSender : ISender
                     .MakeGenericMethod(key.Message, key.Result)
                     .CreateDelegate<Func<IServiceProvider, ICommand<TResult>, CancellationToken, ValueTask<Result<TResult>>>>());
 
-        return invoker(_services, command, ct);
+        return DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.SendCommand(invoker, _services, command, ct)
+            : invoker(_services, command, ct);
     }
 
     public ValueTask<Result> Send(ICommand command, CancellationToken ct = default)
@@ -68,7 +67,9 @@ internal sealed class ReflectionSender : ISender
                     .MakeGenericMethod(key.Message)
                     .CreateDelegate<Func<IServiceProvider, ICommand, CancellationToken, ValueTask<Result>>>());
 
-        return invoker(_services, command, ct);
+        return DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.SendCommand(invoker, _services, command, ct)
+            : invoker(_services, command, ct);
     }
 
     public ValueTask<Result<TResult>> Send<TResult>(
@@ -83,7 +84,9 @@ internal sealed class ReflectionSender : ISender
                     .MakeGenericMethod(key.Message, key.Result)
                     .CreateDelegate<Func<IServiceProvider, IQuery<TResult>, CancellationToken, ValueTask<Result<TResult>>>>());
 
-        return invoker(_services, query, ct);
+        return DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.SendQuery(invoker, _services, query, ct)
+            : invoker(_services, query, ct);
     }
 
     public ValueTask<Result<IAsyncEnumerable<TResult>>> CreateStream<TResult>(
@@ -92,13 +95,15 @@ internal sealed class ReflectionSender : ISender
     {
         ArgumentNullException.ThrowIfNull(query);
 
-        var invoker = (StreamInvoker<TResult>)
+        var invoker = (Func<IServiceProvider, IStreamQuery<TResult>, CancellationToken, ValueTask<Result<IAsyncEnumerable<TResult>>>>)
             _invokers.GetOrAdd((query.GetType(), typeof(TResult), DispatchKind.Stream), static key =>
                 _executeStream
                     .MakeGenericMethod(key.Message, typeof(TResult))
-                    .CreateDelegate<StreamInvoker<TResult>>());
+                    .CreateDelegate<Func<IServiceProvider, IStreamQuery<TResult>, CancellationToken, ValueTask<Result<IAsyncEnumerable<TResult>>>>>());
 
-        return invoker(_services, query, ct);
+        return DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.CreateStream(invoker, _services, query, ct)
+            : invoker(_services, query, ct);
     }
 
     // -------------------------------------------------------------------------

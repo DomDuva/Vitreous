@@ -26,6 +26,12 @@ public sealed class ParallelPublisher : IPublisher
     public ValueTask Publish<TNotification>(
         TNotification notification,
         CancellationToken ct = default)
+        where TNotification : INotification =>
+        DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.Publish(static (self, n, token) => self.PublishCore(n, token), this, notification, ct)
+            : PublishCore(notification, ct);
+
+    private ValueTask PublishCore<TNotification>(TNotification notification, CancellationToken ct)
         where TNotification : INotification
     {
         var handlers = _services.GetServices<INotificationHandler<TNotification>>();
@@ -59,7 +65,7 @@ public sealed class ParallelPublisher : IPublisher
         ValueTask pending;
         try
         {
-            pending = handler.Handle(notification, ct);
+            pending = DispatchTelemetry.Handle(handler, notification, ct);
         }
         catch (OperationCanceledException)
         {
@@ -129,7 +135,7 @@ public sealed class ParallelPublisher : IPublisher
     {
         try
         {
-            return handler.Handle(notification, ct).AsTask();
+            return DispatchTelemetry.Handle(handler, notification, ct).AsTask();
         }
         catch (OperationCanceledException oce)
         {
