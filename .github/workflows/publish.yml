@@ -21,7 +21,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: ${{ inputs.tag || github.event.release.tag_name }}
           fetch-depth: 0
@@ -47,14 +47,15 @@ jobs:
           fi
           echo "value=${TAG#v}" >> "$GITHUB_OUTPUT"
 
-      # All three SDKs so the test projects run on every target framework.
+      # All four SDKs so the test projects run on every target framework.
       - name: Setup .NET
-        uses: actions/setup-dotnet@v4
+        uses: actions/setup-dotnet@v6
         with:
           dotnet-version: |
             8.x
             9.x
             10.x
+            11.x
 
       - name: Restore dependencies
         run: dotnet restore
@@ -110,7 +111,7 @@ jobs:
         run: gh release upload "$TAG" ./artifacts/*.nupkg ./artifacts/*.snupkg --clobber
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nuget-packages
           path: ./artifacts/

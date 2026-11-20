@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Builds against the packed nupkgs, the way a consumer does, on whichever SDK is active:
+      dotnet build -c Release -p:SmokeTargetFramework=net8.0 -p:VitreousPackageVersion=0.0.0-ci.1
+      dotnet bin/Release/net8.0/Vitreous.PackageSmokeTest.dll
+    (SDK 8's dotnet run ignores the TFM property when it picks the executable.)
+    Not part of Vitreous.slnx. Unit tests load the generator directly, so they cannot see the
+    compiler skipping it (CS9057); this build fails when that happens.
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <SmokeTargetFramework Condition="'$(SmokeTargetFramework)' == ''">net11.0</SmokeTargetFramework>
+    <TargetFramework>$(SmokeTargetFramework)</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <IsPackable>false</IsPackable>
+    <!-- Keep CI-versioned packages out of the global NuGet cache. -->
+    <RestorePackagesPath>$(MSBuildThisFileDirectory)obj/packages</RestorePackagesPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Vitreous" Version="$(VitreousPackageVersion)" />
+    <PackageReference Include="Vitreous.SourceGeneration" Version="$(VitreousPackageVersion)" PrivateAssets="all" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.0" />
+  </ItemGroup>
+
+  <Target Name="RequirePackageVersion" BeforeTargets="Restore;CollectPackageReferences">
+    <Error Condition="'$(VitreousPackageVersion)' == ''" Text="Pass -p:VitreousPackageVersion=&lt;version in ../../artifacts&gt;." />
+  </Target>
+
+</Project>
