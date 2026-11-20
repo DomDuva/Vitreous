@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.4.0] - Unreleased
+
+### Added
+
+- OpenTelemetry tracing and metrics in `Vitreous`, through `System.Diagnostics` with no new dependency. Subscribe to `VitreousTelemetry.ActivitySourceName` and `VitreousTelemetry.MeterName` (both `"Vitreous"`). Every command, query, stream and notification gets a span, and each notification handler gets a child span. A failed `Result` sets the span status to `Error`, with `Error.Code` recorded as `error.type`. Durations are recorded in the `vitreous.dispatch.duration` histogram. Nothing is recorded, and nothing extra is allocated, until a listener subscribes.
+- `Vitreous.Caching` counts cache hits, misses and coalesced loads (`vitreous.cache.requests`) and invalidations (`vitreous.cache.invalidations`) on the `VitreousCachingTelemetry.MeterName` meter (`"Vitreous.Caching"`).
+- The source generator routes dispatch through the new telemetry when the referenced `Vitreous` has it. With an older `Vitreous` it emits the previous dispatcher, so upgrading only the generator still compiles.
+
 ## [0.3.0] - 2026-11-20
 
 ### Added
