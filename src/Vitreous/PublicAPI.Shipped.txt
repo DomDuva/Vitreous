@@ -1,0 +1,148 @@
+#nullable enable
+Vitreous.Abstractions.CommandHandlerDelegate<TCommand>
+Vitreous.Abstractions.ICommand
+Vitreous.Abstractions.ICommand<TResult>
+Vitreous.Abstractions.ICommandHandler<TCommand, TResult>
+Vitreous.Abstractions.ICommandHandler<TCommand, TResult>.Handle(TCommand command, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Abstractions.ICommandHandler<TCommand>
+Vitreous.Abstractions.ICommandHandler<TCommand>.Handle(TCommand command, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
+Vitreous.Abstractions.INotification
+Vitreous.Abstractions.INotificationHandler<TNotification>
+Vitreous.Abstractions.INotificationHandler<TNotification>.Handle(TNotification notification, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Abstractions.INotificationPipelineBehavior<TNotification>
+Vitreous.Abstractions.INotificationPipelineBehavior<TNotification>.Handle(TNotification notification, Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Abstractions.IPipelineBehavior<TMessage, TResult>
+Vitreous.Abstractions.IPipelineBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Abstractions.IPublisher
+Vitreous.Abstractions.IPublisher.Publish<TNotification>(TNotification notification, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Abstractions.IQuery<TResult>
+Vitreous.Abstractions.IQueryHandler<TQuery, TResult>
+Vitreous.Abstractions.IQueryHandler<TQuery, TResult>.Handle(TQuery query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Abstractions.ISender
+Vitreous.Abstractions.ISender.CreateStream<TResult>(Vitreous.Abstractions.IStreamQuery<TResult>! query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+Vitreous.Abstractions.ISender.Send(Vitreous.Abstractions.ICommand! command, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
+Vitreous.Abstractions.ISender.Send<TResult>(Vitreous.Abstractions.ICommand<TResult>! command, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Abstractions.ISender.Send<TResult>(Vitreous.Abstractions.IQuery<TResult>! query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.Abstractions.IStreamPipelineBehavior<TMessage, TResult>
+Vitreous.Abstractions.IStreamPipelineBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+Vitreous.Abstractions.IStreamQuery<TResult>
+Vitreous.Abstractions.IStreamQueryHandler<TQuery, TResult>
+Vitreous.Abstractions.IStreamQueryHandler<TQuery, TResult>.Handle(TQuery query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>
+Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>
+Vitreous.Abstractions.StreamQueryHandler<TQuery, TResult>
+Vitreous.Abstractions.StreamQueryHandler<TQuery, TResult>.StreamQueryHandler() -> void
+Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>
+Vitreous.Error
+Vitreous.Error.<Clone>$() -> Vitreous.Error!
+Vitreous.Error.Code.get -> string!
+Vitreous.Error.Code.init -> void
+Vitreous.Error.Deconstruct(out string! Code, out string! Message, out System.Collections.Generic.IReadOnlyDictionary<string!, object?>? Extensions) -> void
+Vitreous.Error.Equals(Vitreous.Error? other) -> bool
+Vitreous.Error.Error(string! Code, string! Message, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? Extensions = null) -> void
+Vitreous.Error.Exception.get -> System.Exception?
+Vitreous.Error.Exception.init -> void
+Vitreous.Error.Extensions.get -> System.Collections.Generic.IReadOnlyDictionary<string!, object?>?
+Vitreous.Error.Extensions.init -> void
+Vitreous.Error.Message.get -> string!
+Vitreous.Error.Message.init -> void
+Vitreous.Internal.ParallelPublisher
+Vitreous.Internal.ParallelPublisher.ParallelPublisher(System.IServiceProvider! services) -> void
+Vitreous.Internal.ParallelPublisher.Publish<TNotification>(TNotification notification, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Internal.PipelineExecutor
+Vitreous.Internal.SequentialPublisher
+Vitreous.Internal.SequentialPublisher.Publish<TNotification>(TNotification notification, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.Internal.SequentialPublisher.SequentialPublisher(System.IServiceProvider! services) -> void
+Vitreous.NotificationPublishStrategy
+Vitreous.NotificationPublishStrategy.Parallel = 1 -> Vitreous.NotificationPublishStrategy
+Vitreous.NotificationPublishStrategy.Sequential = 0 -> Vitreous.NotificationPublishStrategy
+Vitreous.PipelineAnnotations
+Vitreous.PipelineAnnotations.IsCacheHit.get -> bool
+Vitreous.PipelineAnnotations.IsCacheHit.set -> void
+Vitreous.PipelineAnnotations.PipelineAnnotations() -> void
+Vitreous.Result
+Vitreous.Result.Equals(Vitreous.Result other) -> bool
+Vitreous.Result.Error.get -> Vitreous.Error!
+Vitreous.Result.IsFailure.get -> bool
+Vitreous.Result.IsSuccess.get -> bool
+Vitreous.Result.Match<TOut>(System.Func<TOut>! onSuccess, System.Func<Vitreous.Error!, TOut>! onFailure) -> TOut
+Vitreous.Result.MatchAsync<TOut>(System.Func<System.Threading.Tasks.ValueTask<TOut>>! onSuccess, System.Func<Vitreous.Error!, System.Threading.Tasks.ValueTask<TOut>>! onFailure) -> System.Threading.Tasks.ValueTask<TOut>
+Vitreous.Result.Result() -> void
+Vitreous.Result.ToResult<T>(T successValue) -> Vitreous.Result<T>
+Vitreous.Result<T>
+Vitreous.Result<T>.Bind<TOut>(System.Func<T, Vitreous.Result<TOut>>! bind) -> Vitreous.Result<TOut>
+Vitreous.Result<T>.BindAsync<TOut>(System.Func<T, System.Threading.Tasks.ValueTask<Vitreous.Result<TOut>>>! bind) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TOut>>
+Vitreous.Result<T>.Equals(Vitreous.Result<T> other) -> bool
+Vitreous.Result<T>.Error.get -> Vitreous.Error!
+Vitreous.Result<T>.IsFailure.get -> bool
+Vitreous.Result<T>.IsSuccess.get -> bool
+Vitreous.Result<T>.Map<TOut>(System.Func<T, TOut>! map) -> Vitreous.Result<TOut>
+Vitreous.Result<T>.MapAsync<TOut>(System.Func<T, System.Threading.Tasks.ValueTask<TOut>>! map) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TOut>>
+Vitreous.Result<T>.Match<TOut>(System.Func<T, TOut>! onSuccess, System.Func<Vitreous.Error!, TOut>! onFailure) -> TOut
+Vitreous.Result<T>.MatchAsync<TOut>(System.Func<T, System.Threading.Tasks.ValueTask<TOut>>! onSuccess, System.Func<Vitreous.Error!, System.Threading.Tasks.ValueTask<TOut>>! onFailure) -> System.Threading.Tasks.ValueTask<TOut>
+Vitreous.Result<T>.Result() -> void
+Vitreous.Result<T>.Value.get -> T
+Vitreous.SensitiveAttribute
+Vitreous.SensitiveAttribute.SensitiveAttribute() -> void
+Vitreous.StreamQueryExtensions
+Vitreous.Unit
+Vitreous.Unit.Unit() -> void
+Vitreous.VitreousContext
+Vitreous.VitreousOptions
+Vitreous.VitreousOptions.DefaultHandlerLifetime.get -> Microsoft.Extensions.DependencyInjection.ServiceLifetime
+Vitreous.VitreousOptions.DefaultHandlerLifetime.set -> void
+Vitreous.VitreousOptions.NotificationPublishStrategy.get -> Vitreous.NotificationPublishStrategy
+Vitreous.VitreousOptions.NotificationPublishStrategy.set -> void
+Vitreous.VitreousOptions.VitreousOptions() -> void
+Vitreous.VitreousServiceCollectionExtensions
+abstract Vitreous.Abstractions.StreamQueryHandler<TQuery, TResult>.Stream(TQuery query, System.Threading.CancellationToken ct) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+override Vitreous.Error.Equals(object? obj) -> bool
+override Vitreous.Error.GetHashCode() -> int
+override Vitreous.Error.ToString() -> string!
+override Vitreous.Result.Equals(object? obj) -> bool
+override Vitreous.Result.GetHashCode() -> int
+override Vitreous.Result.ToString() -> string!
+override Vitreous.Result<T>.Equals(object? obj) -> bool
+override Vitreous.Result<T>.GetHashCode() -> int
+override Vitreous.Result<T>.ToString() -> string!
+override Vitreous.Unit.ToString() -> string!
+static Vitreous.Error.Conflict(string! message, string? code = null) -> Vitreous.Error!
+static Vitreous.Error.Custom(string! code, string! message, System.Collections.Generic.IReadOnlyDictionary<string!, object?>? extensions = null) -> Vitreous.Error!
+static Vitreous.Error.Internal(string! message, System.Exception? exception = null, string? code = null) -> Vitreous.Error!
+static Vitreous.Error.NotFound(string! message, string? code = null) -> Vitreous.Error!
+static Vitreous.Error.Unauthorized(string! message, string? code = null) -> Vitreous.Error!
+static Vitreous.Error.Uninitialized.get -> Vitreous.Error!
+static Vitreous.Error.Validation(string! message, System.Collections.Generic.IReadOnlyDictionary<string!, string![]!>? failures = null, string? code = null) -> Vitreous.Error!
+static Vitreous.Error.operator !=(Vitreous.Error? left, Vitreous.Error? right) -> bool
+static Vitreous.Error.operator ==(Vitreous.Error? left, Vitreous.Error? right) -> bool
+static Vitreous.Internal.PipelineExecutor.Execute<TMessage, TResult>(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.IPipelineBehavior<TMessage, TResult>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+static Vitreous.Internal.PipelineExecutor.ExecuteNotification<TNotification>(TNotification notification, Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.INotificationPipelineBehavior<TNotification>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+static Vitreous.Internal.PipelineExecutor.ExecuteStream<TMessage, TResult>(TMessage message, Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.IStreamPipelineBehavior<TMessage, TResult>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+static Vitreous.Internal.PipelineExecutor.ExecuteVoid<TCommand>(TCommand command, Vitreous.Abstractions.CommandHandlerDelegate<TCommand>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.IPipelineBehavior<TCommand, Vitreous.Unit>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
+static Vitreous.Result.Fail(Vitreous.Error! error) -> Vitreous.Result
+static Vitreous.Result.implicit operator Vitreous.Result(Vitreous.Error! error) -> Vitreous.Result
+static Vitreous.Result.operator !=(Vitreous.Result left, Vitreous.Result right) -> bool
+static Vitreous.Result.operator ==(Vitreous.Result left, Vitreous.Result right) -> bool
+static Vitreous.Result<T>.Fail(Vitreous.Error! error) -> Vitreous.Result<T>
+static Vitreous.Result<T>.Ok(T value) -> Vitreous.Result<T>
+static Vitreous.Result<T>.implicit operator Vitreous.Result<T>(T value) -> Vitreous.Result<T>
+static Vitreous.Result<T>.implicit operator Vitreous.Result<T>(Vitreous.Error! error) -> Vitreous.Result<T>
+static Vitreous.Result<T>.operator !=(Vitreous.Result<T> left, Vitreous.Result<T> right) -> bool
+static Vitreous.Result<T>.operator ==(Vitreous.Result<T> left, Vitreous.Result<T> right) -> bool
+static Vitreous.StreamQueryExtensions.CollectStream<TResult>(this Vitreous.Abstractions.ISender! sender, Vitreous.Abstractions.IStreamQuery<TResult>! query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.List<TResult>!>>
+static Vitreous.StreamQueryExtensions.FilterStream<T>(this Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<T>!> result, System.Func<T, bool>! predicate) -> Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<T>!>
+static Vitreous.StreamQueryExtensions.MapStream<TIn, TOut>(this Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TIn>!> result, System.Func<TIn, TOut>! mapper) -> Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TOut>!>
+static Vitreous.StreamQueryExtensions.TakeStream<T>(this Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<T>!> result, int count) -> Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<T>!>
+static Vitreous.VitreousContext.Current.get -> Vitreous.PipelineAnnotations?
+static Vitreous.VitreousContext.Current.set -> void
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreous(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.VitreousOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreous(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousHandlers(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.VitreousOptions!>? configure, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousHandlers(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static readonly Vitreous.Result.Success -> Vitreous.Result
+static readonly Vitreous.Unit.Value -> Vitreous.Unit
+virtual Vitreous.Abstractions.CommandHandlerDelegate<TCommand>.Invoke(TCommand command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
+virtual Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>.Invoke(TMessage message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+virtual Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>.Invoke(TNotification notification, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
+virtual Vitreous.Abstractions.StreamQueryHandler<TQuery, TResult>.Handle(TQuery query, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+virtual Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>.Invoke(TMessage message, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>

@@ -25,4 +25,14 @@
   <ItemGroup Condition="'$(IsPackable)' == 'true'">
     <PackageReference Include="MinVer" PrivateAssets="all" />
   </ItemGroup>
+
+  <!--
+    Public API tracking (RS0016/RS0017) for the runtime packages. New public API goes in
+    PublicAPI.Unshipped.txt; each release moves it to PublicAPI.Shipped.txt.
+  -->
+  <ItemGroup Condition="'$(IsPackable)' == 'true' and '$(OutputType)' == 'Library' and '$(IsRoslynComponent)' != 'true'">
+    <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
+    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
+    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
+  </ItemGroup>
 </Project>

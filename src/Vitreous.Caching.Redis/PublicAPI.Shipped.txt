@@ -1,0 +1,17 @@
+#nullable enable
+Vitreous.Caching.Redis.VitreousRedisCachingOptions
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.ConnectionString.get -> string?
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.ConnectionString.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.DefaultAbsoluteExpiration.get -> System.TimeSpan?
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.DefaultAbsoluteExpiration.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.EnableStampedeProtection.get -> bool
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.EnableStampedeProtection.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.JsonSerializerOptions.get -> System.Text.Json.JsonSerializerOptions!
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.JsonSerializerOptions.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.KeyPrefix.get -> string!
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.KeyPrefix.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.TagPrefix.get -> string!
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.TagPrefix.set -> void
+Vitreous.Caching.Redis.VitreousRedisCachingOptions.VitreousRedisCachingOptions() -> void
+Vitreous.Caching.Redis.VitreousRedisCachingServiceCollectionExtensions
+static Vitreous.Caching.Redis.VitreousRedisCachingServiceCollectionExtensions.AddVitreousRedisCaching(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.Caching.Redis.VitreousRedisCachingOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

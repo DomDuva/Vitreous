@@ -1,0 +1,135 @@
+#nullable enable
+Vitreous.DevUI.DevUIState
+Vitreous.DevUI.DevUIState.DevUIState() -> void
+Vitreous.DevUI.DevUIState.IsActive.get -> bool
+Vitreous.DevUI.Extensions.ApplicationBuilderExtensions
+Vitreous.DevUI.Middleware.SseConnectionManager
+Vitreous.DevUI.Middleware.SseConnectionManager.Broadcast(Vitreous.DevUI.Tracing.ExecutionTrace! trace) -> void
+Vitreous.DevUI.Middleware.SseConnectionManager.ClientCount.get -> int
+Vitreous.DevUI.Middleware.SseConnectionManager.Dispose() -> void
+Vitreous.DevUI.Middleware.SseConnectionManager.SseConnectionManager(Vitreous.DevUI.Tracing.DevUISerializer! serializer, Vitreous.DevUI.VitreousDevUIOptions! options) -> void
+Vitreous.DevUI.Middleware.SseConnectionManager.Subscribe() -> Vitreous.DevUI.Middleware.SseSubscription!
+Vitreous.DevUI.Middleware.SseSubscription
+Vitreous.DevUI.Middleware.SseSubscription.Dispose() -> void
+Vitreous.DevUI.Middleware.SseSubscription.Reader.get -> System.Threading.Channels.ChannelReader<string!>!
+Vitreous.DevUI.Middleware.VitreousDevUIMiddleware
+Vitreous.DevUI.Middleware.VitreousDevUIMiddleware.InvokeAsync(Microsoft.AspNetCore.Http.HttpContext! context) -> System.Threading.Tasks.Task!
+Vitreous.DevUI.Middleware.VitreousDevUIMiddleware.VitreousDevUIMiddleware(Microsoft.AspNetCore.Http.RequestDelegate! next, Vitreous.DevUI.Tracing.TraceStore! store, Vitreous.DevUI.Middleware.SseConnectionManager! sse, Vitreous.DevUI.Tracing.DevUISerializer! serializer, Vitreous.DevUI.VitreousDevUIOptions! options) -> void
+Vitreous.DevUI.Tracing.DevUISerializer
+Vitreous.DevUI.Tracing.DevUISerializer.DevUISerializer(Vitreous.DevUI.VitreousDevUIOptions! options) -> void
+Vitreous.DevUI.Tracing.DevUISerializer.SerializePayload<T>(T? value) -> string?
+Vitreous.DevUI.Tracing.DevUISerializer.SerializeTrace<T>(T trace) -> string!
+Vitreous.DevUI.Tracing.ErrorSnapshot
+Vitreous.DevUI.Tracing.ErrorSnapshot.<Clone>$() -> Vitreous.DevUI.Tracing.ErrorSnapshot!
+Vitreous.DevUI.Tracing.ErrorSnapshot.Code.get -> string!
+Vitreous.DevUI.Tracing.ErrorSnapshot.Code.init -> void
+Vitreous.DevUI.Tracing.ErrorSnapshot.Deconstruct(out string! Code, out string! Message, out string? ExceptionType, out string? StackTrace) -> void
+Vitreous.DevUI.Tracing.ErrorSnapshot.Equals(Vitreous.DevUI.Tracing.ErrorSnapshot? other) -> bool
+Vitreous.DevUI.Tracing.ErrorSnapshot.ErrorSnapshot(string! Code, string! Message, string? ExceptionType = null, string? StackTrace = null) -> void
+Vitreous.DevUI.Tracing.ErrorSnapshot.ExceptionType.get -> string?
+Vitreous.DevUI.Tracing.ErrorSnapshot.ExceptionType.init -> void
+Vitreous.DevUI.Tracing.ErrorSnapshot.Message.get -> string!
+Vitreous.DevUI.Tracing.ErrorSnapshot.Message.init -> void
+Vitreous.DevUI.Tracing.ErrorSnapshot.StackTrace.get -> string?
+Vitreous.DevUI.Tracing.ErrorSnapshot.StackTrace.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace
+Vitreous.DevUI.Tracing.ExecutionTrace.Category.get -> Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.ExecutionTrace.Category.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.CorrelationId.get -> string?
+Vitreous.DevUI.Tracing.ExecutionTrace.CorrelationId.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.Duration.get -> System.TimeSpan
+Vitreous.DevUI.Tracing.ExecutionTrace.Duration.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.Error.get -> Vitreous.DevUI.Tracing.ErrorSnapshot?
+Vitreous.DevUI.Tracing.ExecutionTrace.Error.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.ExecutionTrace() -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.HandlerType.get -> string!
+Vitreous.DevUI.Tracing.ExecutionTrace.HandlerType.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.Id.get -> System.Guid
+Vitreous.DevUI.Tracing.ExecutionTrace.Id.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.IsCacheHit.get -> bool
+Vitreous.DevUI.Tracing.ExecutionTrace.IsCacheHit.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.IsSuccess.get -> bool
+Vitreous.DevUI.Tracing.ExecutionTrace.IsSuccess.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.ItemCount.get -> int?
+Vitreous.DevUI.Tracing.ExecutionTrace.ItemCount.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.Logs.get -> System.Collections.Generic.IReadOnlyList<Vitreous.DevUI.Tracing.TraceLogEntry!>!
+Vitreous.DevUI.Tracing.ExecutionTrace.Logs.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.MessageType.get -> string!
+Vitreous.DevUI.Tracing.ExecutionTrace.MessageType.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.MessageTypeFullName.get -> string!
+Vitreous.DevUI.Tracing.ExecutionTrace.MessageTypeFullName.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.SerializedInput.get -> string?
+Vitreous.DevUI.Tracing.ExecutionTrace.SerializedInput.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.SerializedOutput.get -> string?
+Vitreous.DevUI.Tracing.ExecutionTrace.SerializedOutput.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.StreamId.get -> System.Guid?
+Vitreous.DevUI.Tracing.ExecutionTrace.StreamId.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.StreamPhase.get -> Vitreous.DevUI.Tracing.StreamPhase?
+Vitreous.DevUI.Tracing.ExecutionTrace.StreamPhase.init -> void
+Vitreous.DevUI.Tracing.ExecutionTrace.Timestamp.get -> System.DateTimeOffset
+Vitreous.DevUI.Tracing.ExecutionTrace.Timestamp.init -> void
+Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.MessageCategory.Command = 0 -> Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.MessageCategory.Notification = 2 -> Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.MessageCategory.Query = 1 -> Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.MessageCategory.StreamQuery = 3 -> Vitreous.DevUI.Tracing.MessageCategory
+Vitreous.DevUI.Tracing.NotificationTracingBehavior<TNotification>
+Vitreous.DevUI.Tracing.NotificationTracingBehavior<TNotification>.Handle(TNotification notification, Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
+Vitreous.DevUI.Tracing.NotificationTracingBehavior<TNotification>.NotificationTracingBehavior(Vitreous.DevUI.Tracing.TraceStore! store, Vitreous.DevUI.Tracing.DevUISerializer! serializer, Vitreous.DevUI.DevUIState! state) -> void
+Vitreous.DevUI.Tracing.StreamPhase
+Vitreous.DevUI.Tracing.StreamPhase.Closed = 1 -> Vitreous.DevUI.Tracing.StreamPhase
+Vitreous.DevUI.Tracing.StreamPhase.Opened = 0 -> Vitreous.DevUI.Tracing.StreamPhase
+Vitreous.DevUI.Tracing.StreamTracingBehavior<TMessage, TResult>
+Vitreous.DevUI.Tracing.StreamTracingBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+Vitreous.DevUI.Tracing.StreamTracingBehavior<TMessage, TResult>.StreamTracingBehavior(Vitreous.DevUI.Tracing.TraceStore! store, Vitreous.DevUI.Tracing.DevUISerializer! serializer, Vitreous.DevUI.DevUIState! state, Vitreous.DevUI.VitreousDevUIOptions! options) -> void
+Vitreous.DevUI.Tracing.TraceContext
+Vitreous.DevUI.Tracing.TraceContext.TraceContext() -> void
+Vitreous.DevUI.Tracing.TraceLogEntry
+Vitreous.DevUI.Tracing.TraceLogEntry.<Clone>$() -> Vitreous.DevUI.Tracing.TraceLogEntry!
+Vitreous.DevUI.Tracing.TraceLogEntry.Deconstruct(out Microsoft.Extensions.Logging.LogLevel Level, out string! Message, out System.DateTimeOffset Timestamp) -> void
+Vitreous.DevUI.Tracing.TraceLogEntry.Equals(Vitreous.DevUI.Tracing.TraceLogEntry? other) -> bool
+Vitreous.DevUI.Tracing.TraceLogEntry.Level.get -> Microsoft.Extensions.Logging.LogLevel
+Vitreous.DevUI.Tracing.TraceLogEntry.Level.init -> void
+Vitreous.DevUI.Tracing.TraceLogEntry.Message.get -> string!
+Vitreous.DevUI.Tracing.TraceLogEntry.Message.init -> void
+Vitreous.DevUI.Tracing.TraceLogEntry.Timestamp.get -> System.DateTimeOffset
+Vitreous.DevUI.Tracing.TraceLogEntry.Timestamp.init -> void
+Vitreous.DevUI.Tracing.TraceLogEntry.TraceLogEntry(Microsoft.Extensions.Logging.LogLevel Level, string! Message, System.DateTimeOffset Timestamp) -> void
+Vitreous.DevUI.Tracing.TraceStore
+Vitreous.DevUI.Tracing.TraceStore.Append(Vitreous.DevUI.Tracing.ExecutionTrace! trace) -> void
+Vitreous.DevUI.Tracing.TraceStore.Capacity.get -> int
+Vitreous.DevUI.Tracing.TraceStore.Count.get -> int
+Vitreous.DevUI.Tracing.TraceStore.GetAll() -> System.Collections.Generic.IReadOnlyList<Vitreous.DevUI.Tracing.ExecutionTrace!>!
+Vitreous.DevUI.Tracing.TraceStore.TraceAdded -> System.Action<Vitreous.DevUI.Tracing.ExecutionTrace!>?
+Vitreous.DevUI.Tracing.TraceStore.TraceStore(int capacity = 500) -> void
+Vitreous.DevUI.Tracing.TracingBehavior<TMessage, TResult>
+Vitreous.DevUI.Tracing.TracingBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+Vitreous.DevUI.Tracing.TracingBehavior<TMessage, TResult>.TracingBehavior(Vitreous.DevUI.Tracing.TraceStore! store, Vitreous.DevUI.Tracing.DevUISerializer! serializer, Vitreous.DevUI.DevUIState! state) -> void
+Vitreous.DevUI.VitreousDevUIOptions
+Vitreous.DevUI.VitreousDevUIOptions.Enabled.get -> bool?
+Vitreous.DevUI.VitreousDevUIOptions.Enabled.set -> void
+Vitreous.DevUI.VitreousDevUIOptions.MaxCapturedStreamItems.get -> int
+Vitreous.DevUI.VitreousDevUIOptions.MaxCapturedStreamItems.set -> void
+Vitreous.DevUI.VitreousDevUIOptions.PathPrefix.get -> string!
+Vitreous.DevUI.VitreousDevUIOptions.PathPrefix.set -> void
+Vitreous.DevUI.VitreousDevUIOptions.RedactedPropertyNames.get -> System.Collections.Generic.ISet<string!>!
+Vitreous.DevUI.VitreousDevUIOptions.SseHeartbeatInterval.get -> System.TimeSpan
+Vitreous.DevUI.VitreousDevUIOptions.SseHeartbeatInterval.set -> void
+Vitreous.DevUI.VitreousDevUIOptions.TraceBufferCapacity.get -> int
+Vitreous.DevUI.VitreousDevUIOptions.TraceBufferCapacity.set -> void
+Vitreous.DevUI.VitreousDevUIOptions.VitreousDevUIOptions() -> void
+override Vitreous.DevUI.Tracing.ErrorSnapshot.Equals(object? obj) -> bool
+override Vitreous.DevUI.Tracing.ErrorSnapshot.GetHashCode() -> int
+override Vitreous.DevUI.Tracing.ErrorSnapshot.ToString() -> string!
+override Vitreous.DevUI.Tracing.TraceLogEntry.Equals(object? obj) -> bool
+override Vitreous.DevUI.Tracing.TraceLogEntry.GetHashCode() -> int
+override Vitreous.DevUI.Tracing.TraceLogEntry.ToString() -> string!
+static Vitreous.DevUI.Extensions.ApplicationBuilderExtensions.AddVitreousDevUI(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.DevUI.VitreousDevUIOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.DevUI.Extensions.ApplicationBuilderExtensions.MapVitreousDevUI(this Microsoft.AspNetCore.Routing.IEndpointRouteBuilder! endpoints, string? pathPrefix = null) -> Microsoft.AspNetCore.Routing.RouteGroupBuilder!
+static Vitreous.DevUI.Extensions.ApplicationBuilderExtensions.UseVitreousDevUI(this Microsoft.AspNetCore.Builder.IApplicationBuilder! app) -> Microsoft.AspNetCore.Builder.IApplicationBuilder!
+static Vitreous.DevUI.Tracing.ErrorSnapshot.FromError(Vitreous.Error! error) -> Vitreous.DevUI.Tracing.ErrorSnapshot!
+static Vitreous.DevUI.Tracing.ErrorSnapshot.FromException(System.Exception! exception) -> Vitreous.DevUI.Tracing.ErrorSnapshot!
+static Vitreous.DevUI.Tracing.ErrorSnapshot.operator !=(Vitreous.DevUI.Tracing.ErrorSnapshot? left, Vitreous.DevUI.Tracing.ErrorSnapshot? right) -> bool
+static Vitreous.DevUI.Tracing.ErrorSnapshot.operator ==(Vitreous.DevUI.Tracing.ErrorSnapshot? left, Vitreous.DevUI.Tracing.ErrorSnapshot? right) -> bool
+static Vitreous.DevUI.Tracing.TraceLogEntry.operator !=(Vitreous.DevUI.Tracing.TraceLogEntry? left, Vitreous.DevUI.Tracing.TraceLogEntry? right) -> bool
+static Vitreous.DevUI.Tracing.TraceLogEntry.operator ==(Vitreous.DevUI.Tracing.TraceLogEntry? left, Vitreous.DevUI.Tracing.TraceLogEntry? right) -> bool
