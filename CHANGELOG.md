@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.3.0] - Unreleased
+
+### Added
+
+- `net11.0` target for `Vitreous`, `Vitreous.Caching`, `Vitreous.Caching.Redis` and `Vitreous.DevUI`.
+- The public API of the runtime packages is tracked with `Microsoft.CodeAnalysis.PublicApiAnalyzers`.
+- CI builds a consumer app against the packed `Vitreous` and `Vitreous.SourceGeneration` packages on SDK 8.0.100, 9.0.100, 10.0.100 and 11.0.100, so a generator the compiler would skip (CS9057) fails the build.
+
+### Fixed
+
+- The source generator keeps nullable annotations in handler type arguments. A handler for `IQuery<IReadOnlyList<string?>>` was registered as `IQueryHandler<Q, IReadOnlyList<string>>`, which raised CS8631 in nullable-enabled projects.
+
+### Changed
+
+- Benchmarks are run on .NET 10 and .NET 11.
+
 ## [0.2.0] - 2026-11-19
 
 ### Breaking

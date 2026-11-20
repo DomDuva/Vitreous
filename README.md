@@ -8,7 +8,7 @@
 [![Caching](https://img.shields.io/nuget/v/Vitreous.Caching.svg?label=Caching)](https://www.nuget.org/packages/Vitreous.Caching)
 [![Caching.Redis](https://img.shields.io/nuget/v/Vitreous.Caching.Redis.svg?label=Caching.Redis)](https://www.nuget.org/packages/Vitreous.Caching.Redis)
 
-A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, .NET 9, and .NET 10.
+A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, 9, 10 and 11.
 
 **Packages**
 
@@ -920,9 +920,6 @@ Commands and queries must have exactly one handler. If you need fan-out, use a n
 
 **`Cannot resolve scoped service 'ISender' from root provider`**
 Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies.
-
-**Only one notification handler runs**
-Fixed in the version after 0.1.0 — earlier generated code registered notification handlers with `TryAddSingleton`, which kept only the first. Update both `Vitreous` and `Vitreous.SourceGeneration`.
 
 **Nothing shows in the DevUI**
 `UseVitreousDevUI()` must run in the environment you are testing (the samples gate it on `IsDevelopment()`), and `AddVitreousDevUI()` must be called before `builder.Build()`. Open `/vitreous` in a browser and trigger a request.
