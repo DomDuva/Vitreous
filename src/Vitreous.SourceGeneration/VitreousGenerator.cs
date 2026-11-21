@@ -151,7 +151,11 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             messages.AddRange(scan.Messages);
         }
 
-        var features = types.DispatchTelemetry is not null ? CoreFeatures.DispatchTelemetry : CoreFeatures.None;
+        var features = CoreFeatures.None;
+        if (types.DispatchTelemetry is not null)
+            features |= CoreFeatures.DispatchTelemetry;
+        if (types.HasAddVitreousGenerated)
+            features |= CoreFeatures.AddVitreousGenerated;
 
         return new ReferenceModel(true, features, new(handlers.ToImmutable()), new(messages.ToImmutable()));
     }
@@ -220,7 +224,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var handlers = result.Handlers.AsImmutableArray();
         return new[]
         {
-            new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers)),
+            new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers, result.Features)),
             new GeneratedFile("VitreousDispatcher.g.cs", RegistrationEmitter.EmitDispatcher(handlers, result.Features)),
         }.ToEquatableArray();
     }
