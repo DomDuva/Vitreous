@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Vitreous.Abstractions;
 using Vitreous.Internal;
@@ -10,6 +11,12 @@ namespace Vitreous;
 /// </summary>
 public static partial class VitreousServiceCollectionExtensions
 {
+    // Shown by the trim/AOT analyzers when an app calls one of the reflection-based APIs.
+    internal const string ReflectionMessage =
+        "Vitreous dispatches with reflection when it is registered this way. For trimmed or " +
+        "Native AOT apps, install Vitreous.SourceGeneration and call the generated " +
+        "AddVitreousHandlers() overload with no assemblies.";
+
     /// <summary>
     /// Registers Vitreous core services (sender, publisher).
     /// <para>
@@ -20,6 +27,8 @@ public static partial class VitreousServiceCollectionExtensions
     /// </summary>
     /// <param name="services">The service collection.</param>
     /// <param name="configure">Optional configuration callback.</param>
+    [RequiresUnreferencedCode(ReflectionMessage)]
+    [RequiresDynamicCode(ReflectionMessage)]
     public static IServiceCollection AddVitreous(
         this IServiceCollection services,
         Action<VitreousOptions>? configure = null)
@@ -38,9 +47,38 @@ public static partial class VitreousServiceCollectionExtensions
     /// Application code should call <see cref="AddVitreous(IServiceCollection, Action{VitreousOptions})"/>.
     /// </remarks>
     [EditorBrowsable(EditorBrowsableState.Never)]
+    [RequiresUnreferencedCode(ReflectionMessage)]
+    [RequiresDynamicCode(ReflectionMessage)]
     public static IServiceCollection AddVitreous(
         this IServiceCollection services,
         VitreousOptions options)
+    {
+        AddCoreServices(services, options);
+
+        // Fallback sender — overridden by source-generated VitreousDispatcher when present
+        services.TryAdd(new ServiceDescriptor(typeof(ISender), typeof(ReflectionSender), GetDispatcherLifetime(options)));
+
+        return services;
+    }
+
+    /// <summary>
+    /// Registers Vitreous core services for the source-generated <c>AddVitreousHandlers()</c>:
+    /// everything <see cref="AddVitreous(IServiceCollection, VitreousOptions)"/> registers
+    /// except the reflection-based sender, so trimmed and Native AOT apps don't keep it.
+    /// </summary>
+    /// <remarks>
+    /// Application code should call the generated <c>AddVitreousHandlers()</c>, which calls this.
+    /// </remarks>
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    public static IServiceCollection AddVitreousGenerated(
+        this IServiceCollection services,
+        VitreousOptions options)
+    {
+        AddCoreServices(services, options);
+        return services;
+    }
+
+    private static void AddCoreServices(IServiceCollection services, VitreousOptions options)
     {
         ArgumentNullException.ThrowIfNull(services);
         ArgumentNullException.ThrowIfNull(options);
@@ -55,9 +93,6 @@ public static partial class VitreousServiceCollectionExtensions
         // handler resolved from the root would capture scoped dependencies).
         var lifetime = GetDispatcherLifetime(options);
 
-        // Fallback sender — overridden by source-generated VitreousDispatcher when present
-        services.TryAdd(new ServiceDescriptor(typeof(ISender), typeof(ReflectionSender), lifetime));
-
         // Always register both concrete publishers so the source-generated dispatcher
         // can resolve either by concrete type based on VitreousOptions at runtime.
         services.TryAdd(new ServiceDescriptor(typeof(SequentialPublisher), typeof(SequentialPublisher), lifetime));
@@ -71,8 +106,6 @@ public static partial class VitreousServiceCollectionExtensions
             : typeof(SequentialPublisher);
 
         services.TryAdd(new ServiceDescriptor(typeof(IPublisher), publisherType, lifetime));
-
-        return services;
     }
 
     /// <summary>
@@ -107,6 +140,8 @@ public static partial class VitreousServiceCollectionExtensions
     /// Thrown when no assemblies are supplied. This usually means the
     /// <c>Vitreous.SourceGeneration</c> package is not installed on the entry-point project.
     /// </exception>
+    [RequiresUnreferencedCode(ReflectionMessage)]
+    [RequiresDynamicCode(ReflectionMessage)]
     public static IServiceCollection AddVitreousHandlers(
         this IServiceCollection services,
         params Assembly[] assemblies)
@@ -125,6 +160,8 @@ public static partial class VitreousServiceCollectionExtensions
     /// Thrown when no assemblies are supplied. This usually means the
     /// <c>Vitreous.SourceGeneration</c> package is not installed on the entry-point project.
     /// </exception>
+    [RequiresUnreferencedCode(ReflectionMessage)]
+    [RequiresDynamicCode(ReflectionMessage)]
     public static IServiceCollection AddVitreousHandlers(
         this IServiceCollection services,
         Action<VitreousOptions>? configure,
@@ -181,6 +218,7 @@ public static partial class VitreousServiceCollectionExtensions
         return services;
     }
 
+    [RequiresUnreferencedCode(ReflectionMessage)]
     private static IEnumerable<Type> GetLoadableTypes(Assembly assembly)
     {
         try

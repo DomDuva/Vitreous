@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Diagnostics.CodeAnalysis;
 using System.Reflection;
 using Vitreous.Abstractions;
 
@@ -15,6 +16,8 @@ namespace Vitreous.Internal;
 /// are resolved by the <em>concrete</em> message type, so behaviors constrained on
 /// <c>TMessage</c> and behaviors registered for a specific message type both work.
 /// </remarks>
+[RequiresUnreferencedCode(VitreousServiceCollectionExtensions.ReflectionMessage)]
+[RequiresDynamicCode(VitreousServiceCollectionExtensions.ReflectionMessage)]
 internal sealed class ReflectionSender : ISender
 {
     private const BindingFlags Flags = BindingFlags.NonPublic | BindingFlags.Static;

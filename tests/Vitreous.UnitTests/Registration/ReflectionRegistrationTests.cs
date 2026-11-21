@@ -359,6 +359,19 @@ public sealed class ReflectionRegistrationTests
         services.Count(d => d.ServiceType == typeof(VitreousOptions)).Should().Be(1);
     }
 
+    [Fact]
+    public void AddVitreousGenerated_RegistersEverythingButTheReflectionSender()
+    {
+        var reflection = new ServiceCollection().AddVitreous(new VitreousOptions());
+        var generated = new ServiceCollection().AddVitreousGenerated(new VitreousOptions());
+
+        generated.Should().NotContain(static d => d.ServiceType == typeof(ISender));
+        generated.Select(static d => (d.ServiceType, d.ImplementationType, d.Lifetime))
+            .Should().BeEquivalentTo(reflection
+                .Where(static d => d.ServiceType != typeof(ISender))
+                .Select(static d => (d.ServiceType, d.ImplementationType, d.Lifetime)));
+    }
+
     // ── Invoker cache ─────────────────────────────────────────────────────────
 
     [Fact]
