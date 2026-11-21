@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using Microsoft.Extensions.DependencyInjection;
 using Vitreous.Caching;
 using Vitreous.Caching.Serialization;
@@ -61,6 +63,32 @@ public sealed class SerializerTests
     }
 
     [Fact]
+    public void RoundTrip_WithAJsonSerializerContext()
+    {
+        // What trimmed and Native AOT apps configure.
+        var serializer = new SystemTextJsonVitreousCacheSerializer(
+            new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = CacheJsonContext.Default });
+        var order = new OrderDto(Guid.NewGuid(), "Ada", 3);
+
+        var bytes = serializer.Serialize(order);
+
+        serializer.TryDeserialize<OrderDto>(bytes, out var back).Should().BeTrue();
+        back.Should().Be(order);
+        _serializer.TryDeserialize<OrderDto>(bytes, out var viaReflection).Should().BeTrue();
+        viaReflection.Should().Be(order, "the envelope is the same with or without a context");
+    }
+
+    [Fact]
+    public void TypeMissingFromTheJsonSerializerContext_Throws()
+    {
+        var serializer = new SystemTextJsonVitreousCacheSerializer(
+            new JsonSerializerOptions { TypeInfoResolver = CacheJsonContext.Default });
+
+        // The caching behaviors log this and fall back to the handler.
+        serializer.Invoking(static s => s.Serialize(new Uri("https://example.com"))).Should().Throw<NotSupportedException>();
+    }
+
+    [Fact]
     public async Task DistributedBackend_KeySharedByTwoResultTypes_DoesNotReturnTheOtherType()
     {
         var services = new ServiceCollection();
@@ -115,3 +143,6 @@ public sealed class SerializerTests
         }
     }
 }
+
+[JsonSerializable(typeof(SerializerTests.OrderDto))]
+internal sealed partial class CacheJsonContext : JsonSerializerContext;

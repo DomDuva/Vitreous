@@ -7,6 +7,7 @@
     <Description>A high-performance, source-generated in-process mediator for .NET with a first-class Result type.</Description>
     <PackageTags>mediator;cqrs;result;dispatcher;source-generator;aot</PackageTags>
     <IsPackable>true</IsPackable>
+    <IsAotCompatible>true</IsAotCompatible>
   </PropertyGroup>
 
   <ItemGroup>
