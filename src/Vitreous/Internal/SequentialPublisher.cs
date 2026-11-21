@@ -23,6 +23,12 @@ public sealed class SequentialPublisher : IPublisher
     public ValueTask Publish<TNotification>(
         TNotification notification,
         CancellationToken ct = default)
+        where TNotification : INotification =>
+        DispatchTelemetry.IsEnabled
+            ? DispatchTelemetry.Publish(static (self, n, token) => self.PublishCore(n, token), this, notification, ct)
+            : PublishCore(notification, ct);
+
+    private ValueTask PublishCore<TNotification>(TNotification notification, CancellationToken ct)
         where TNotification : INotification
     {
         // GetServices returns a T[] from MSDI — avoid .ToArray() which would allocate
@@ -41,7 +47,7 @@ public sealed class SequentialPublisher : IPublisher
             // Most common case: single handler — return its ValueTask directly,
             // no async state machine needed.
             if (handlers is IReadOnlyList<INotificationHandler<TNotification>> { Count: 1 } list)
-                return list[0].Handle(notification, ct);
+                return DispatchTelemetry.Handle(list[0], notification, ct);
 
             return RunHandlersSequentiallyAsync(handlers, notification, ct);
         }
@@ -57,7 +63,7 @@ public sealed class SequentialPublisher : IPublisher
         where TNotification : INotification
     {
         foreach (var handler in handlers)
-            await handler.Handle(notification, ct);
+            await DispatchTelemetry.Handle(handler, notification, ct);
     }
 
     private static async ValueTask PublishWithBehaviorsAsync<TNotification>(
@@ -71,7 +77,7 @@ public sealed class SequentialPublisher : IPublisher
         NotificationHandlerDelegate<TNotification> terminal = async (n, token) =>
         {
             foreach (var handler in handlers)
-                await handler.Handle(n, token);
+                await DispatchTelemetry.Handle(handler, n, token);
         };
 
         await PipelineExecutor.ExecuteNotification(notification, terminal, behaviors, ct);

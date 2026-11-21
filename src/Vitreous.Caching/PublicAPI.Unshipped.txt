@@ -1,1 +1,3 @@
 #nullable enable
+const Vitreous.Caching.VitreousCachingTelemetry.MeterName = "Vitreous.Caching" -> string!
+Vitreous.Caching.VitreousCachingTelemetry

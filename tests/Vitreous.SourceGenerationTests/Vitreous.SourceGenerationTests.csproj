@@ -29,4 +29,16 @@
     <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj" />
   </ItemGroup>
 
+  <!--
+    The last Vitreous release before DispatchTelemetry (0.4.0). Generator output is compiled
+    against it to check that a generator newer than Vitreous still produces code that builds.
+  -->
+  <ItemGroup>
+    <PackageDownload Include="Vitreous" Version="[0.3.0]" />
+    <AssemblyAttribute Include="System.Reflection.AssemblyMetadataAttribute">
+      <_Parameter1>Vitreous030</_Parameter1>
+      <_Parameter2>$(NuGetPackageRoot)vitreous/0.3.0/lib/net8.0/Vitreous.dll</_Parameter2>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

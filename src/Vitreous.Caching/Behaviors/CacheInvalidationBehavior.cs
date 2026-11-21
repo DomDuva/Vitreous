@@ -19,6 +19,8 @@ namespace Vitreous.Caching.Behaviors;
 /// </remarks>
 public sealed class CacheInvalidationBehavior<TMessage, TResult> : IPipelineBehavior<TMessage, TResult>
 {
+    private static readonly string? s_messageType = typeof(TMessage).FullName;
+
     private readonly IVitreousCache _cache;
     private readonly ILogger<CacheInvalidationBehavior<TMessage, TResult>> _logger;
 
@@ -49,6 +51,7 @@ public sealed class CacheInvalidationBehavior<TMessage, TResult> : IPipelineBeha
             try
             {
                 await _cache.RemoveAsync(key, ct);
+                VitreousCachingTelemetry.RecordInvalidation("key", s_messageType);
                 _logger.LogDebug(
                     "Vitreous.Caching: invalidated key='{Key}' after {MessageType}",
                     key, typeof(TMessage).Name);
@@ -67,6 +70,7 @@ public sealed class CacheInvalidationBehavior<TMessage, TResult> : IPipelineBeha
             try
             {
                 await _cache.RemoveByTagAsync(tag, ct);
+                VitreousCachingTelemetry.RecordInvalidation("tag", s_messageType);
                 _logger.LogDebug(
                     "Vitreous.Caching: invalidated tag='{Tag}' after {MessageType}",
                     tag, typeof(TMessage).Name);

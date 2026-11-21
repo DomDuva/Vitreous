@@ -71,11 +71,24 @@ internal sealed record TypeModel(
 /// </summary>
 internal sealed record ReferenceModel(
     bool VitreousReferenced,
+    CoreFeatures Features,
     EquatableArray<HandlerInfo> Handlers,
     EquatableArray<MessageTypeInfo> Messages)
 {
     public static readonly ReferenceModel NotReferenced =
-        new(false, EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
+        new(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
+}
+
+/// <summary>
+/// Core APIs newer than the oldest supported Vitreous that the referenced Vitreous provides.
+/// The generator only emits calls to the ones present, so upgrading the generator without
+/// upgrading Vitreous still compiles.
+/// </summary>
+[Flags]
+internal enum CoreFeatures
+{
+    None              = 0,
+    DispatchTelemetry = 1 << 0,   // Vitreous.Internal.DispatchTelemetry (0.4.0)
 }
 
 /// <summary>
@@ -83,6 +96,7 @@ internal sealed record ReferenceModel(
 /// </summary>
 internal sealed record DiscoveryResult(
     bool VitreousReferenced,
+    CoreFeatures Features,
     EquatableArray<HandlerInfo> Handlers,
     EquatableArray<DiagnosticInfo> Diagnostics);
 

@@ -27,6 +27,10 @@ internal sealed class WellKnownTypes
         EnumeratorCancellationAttribute =
             compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.EnumeratorCancellationAttribute");
         CancellationToken = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
+
+        // Optional core APIs. The generator may be newer than the referenced Vitreous, so
+        // generated code only calls what this compilation actually has.
+        DispatchTelemetry = compilation.GetTypeByMetadataName("Vitreous.Internal.DispatchTelemetry");
     }
 
     // Handler interfaces
@@ -45,6 +49,9 @@ internal sealed class WellKnownTypes
     // VIT003
     public INamedTypeSymbol? EnumeratorCancellationAttribute { get; }
     public INamedTypeSymbol? CancellationToken { get; }
+
+    // Vitreous 0.4.0+: OpenTelemetry spans and metrics around generated dispatch
+    public INamedTypeSymbol? DispatchTelemetry { get; }
 
     /// <summary>
     /// Returns the well-known types for <paramref name="compilation"/>, or <see langword="null"/>

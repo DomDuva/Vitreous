@@ -22,6 +22,8 @@ namespace Vitreous.Caching.Behaviors;
 /// </remarks>
 public sealed class CachingBehavior<TMessage, TResult> : IPipelineBehavior<TMessage, TResult>
 {
+    private static readonly string? s_messageType = typeof(TMessage).FullName;
+
     private readonly IVitreousCache _cache;
     private readonly ILogger<CachingBehavior<TMessage, TResult>> _logger;
     private readonly TimeSpan? _defaultExpiration;
@@ -74,6 +76,7 @@ public sealed class CachingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
                 if (VitreousContext.Current is { } annotations)
                     annotations.IsCacheHit = true;
 
+                VitreousCachingTelemetry.RecordRequest("hit", s_messageType);
                 return Result<TResult>.Ok(cached);
             }
         }
@@ -107,7 +110,9 @@ public sealed class CachingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
         {
             try
             {
-                return await inflight.WaitAsync(ct);
+                var shared = await inflight.WaitAsync(ct);
+                VitreousCachingTelemetry.RecordRequest("coalesced", s_messageType);
+                return shared;
             }
             catch (OperationCanceledException) when (!ct.IsCancellationRequested)
             {
@@ -146,6 +151,7 @@ public sealed class CachingBehavior<TMessage, TResult> : IPipelineBehavior<TMess
         CancellationToken ct)
     {
         // ── Handler ───────────────────────────────────────────────────────────
+        VitreousCachingTelemetry.RecordRequest("miss", s_messageType);
         var result = await next(message, ct);
 
         // ── Cache write (success only) ─────────────────────────────────────────

@@ -151,7 +151,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             messages.AddRange(scan.Messages);
         }
 
-        return new ReferenceModel(true, new(handlers.ToImmutable()), new(messages.ToImmutable()));
+        var features = types.DispatchTelemetry is not null ? CoreFeatures.DispatchTelemetry : CoreFeatures.None;
+
+        return new ReferenceModel(true, features, new(handlers.ToImmutable()), new(messages.ToImmutable()));
     }
 
     private static ReferenceScan ScanReference(
@@ -177,7 +179,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static DiscoveryResult Merge(ImmutableArray<TypeModel> sourceTypes, ReferenceModel references)
     {
         if (!references.VitreousReferenced)
-            return new DiscoveryResult(false, EquatableArray<HandlerInfo>.Empty, EquatableArray<DiagnosticInfo>.Empty);
+            return new DiscoveryResult(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<DiagnosticInfo>.Empty);
 
         // Partial types produce one model per part that has a base list; keep each entry once.
         var handlers = sourceTypes.SelectMany(static t => t.Handlers)
@@ -207,7 +209,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         // VIT001 — no handler found for a command/query/stream-query type
         AddNoHandlerDiagnostics(diagnostics, messages, commandHandlers, queryHandlers, streamQueryHandlers);
 
-        return new DiscoveryResult(true, handlers.ToEquatableArray(), diagnostics.ToEquatableArray());
+        return new DiscoveryResult(true, references.Features, handlers.ToEquatableArray(), diagnostics.ToEquatableArray());
     }
 
     private static EquatableArray<GeneratedFile> Emit(DiscoveryResult result)
@@ -219,7 +221,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         return new[]
         {
             new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers)),
-            new GeneratedFile("VitreousDispatcher.g.cs", RegistrationEmitter.EmitDispatcher(handlers)),
+            new GeneratedFile("VitreousDispatcher.g.cs", RegistrationEmitter.EmitDispatcher(handlers, result.Features)),
         }.ToEquatableArray();
     }
 

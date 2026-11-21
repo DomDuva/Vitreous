@@ -1,3 +1,7 @@
+using OpenTelemetry;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
 using Scalar.AspNetCore;
 using Vitreous;
 using Vitreous.Abstractions;
@@ -30,6 +34,21 @@ builder.Services.AddOpenApi();
 // DevUI — only in Development
 if (builder.Environment.IsDevelopment())
     builder.Services.AddVitreousDevUI();
+
+// OpenTelemetry — only when an OTLP endpoint is configured, e.g. the Aspire dashboard:
+//   OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 dotnet run
+if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOINT"]))
+{
+    builder.Services.AddOpenTelemetry()
+        .ConfigureResource(resource => resource.AddService("Vitreous.Sample"))
+        .WithTracing(tracing => tracing
+            .AddAspNetCoreInstrumentation()
+            .AddSource(VitreousTelemetry.ActivitySourceName))
+        .WithMetrics(metrics => metrics
+            .AddAspNetCoreInstrumentation()
+            .AddMeter(VitreousTelemetry.MeterName))
+        .UseOtlpExporter();
+}
 
 // ── Build ─────────────────────────────────────────────────────────────────────
 
