@@ -7,7 +7,7 @@ namespace Vitreous.SourceGeneration;
 /// </summary>
 internal static class RegistrationEmitter
 {
-    internal static string EmitServiceCollectionExtensions(IReadOnlyList<HandlerInfo> handlers, CoreFeatures features)
+    internal static string EmitServiceCollectionExtensions(IReadOnlyList<HandlerInfo> handlers, CoreFeatures features, BehaviorModel behaviors)
     {
         var sb = new StringBuilder();
         // AddVitreousGenerated skips the reflection-based sender, so trimmed/AOT apps don't keep it.
@@ -58,6 +58,12 @@ internal static class RegistrationEmitter
             // distinct implementation. Command/query/stream handlers are one-per-message.
             var method = h.Kind == HandlerKind.Notification ? "TryAddEnumerable" : "TryAdd";
             sb.AppendLine($"        services.{method}(new ServiceDescriptor(typeof({serviceType}), typeof({h.HandlerFullName}), lifetime));");
+        }
+
+        if (BehaviorClosing.EmitRegistration(handlers, behaviors) is { } closedBehaviors)
+        {
+            sb.AppendLine();
+            sb.Append(closedBehaviors);
         }
 
         sb.AppendLine();

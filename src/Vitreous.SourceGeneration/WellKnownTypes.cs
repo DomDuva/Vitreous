@@ -24,6 +24,12 @@ internal sealed class WellKnownTypes
         Query       = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IQuery`1");
         StreamQuery = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IStreamQuery`1");
 
+        Notification                 = compilation.GetTypeByMetadataName("Vitreous.Abstractions.INotification");
+        Unit                         = compilation.GetTypeByMetadataName("Vitreous.Unit");
+        PipelineBehavior             = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IPipelineBehavior`2");
+        StreamPipelineBehavior       = compilation.GetTypeByMetadataName("Vitreous.Abstractions.IStreamPipelineBehavior`2");
+        NotificationPipelineBehavior = compilation.GetTypeByMetadataName("Vitreous.Abstractions.INotificationPipelineBehavior`1");
+
         EnumeratorCancellationAttribute =
             compilation.GetTypeByMetadataName("System.Runtime.CompilerServices.EnumeratorCancellationAttribute");
         CancellationToken = compilation.GetTypeByMetadataName("System.Threading.CancellationToken");
@@ -34,6 +40,7 @@ internal sealed class WellKnownTypes
         HasAddVitreousGenerated = compilation
             .GetTypeByMetadataName("Vitreous.VitreousServiceCollectionExtensions")?
             .GetMembers("AddVitreousGenerated").Length > 0;
+        GeneratedBehaviors = compilation.GetTypeByMetadataName("Vitreous.Internal.GeneratedBehaviors");
     }
 
     // Handler interfaces
@@ -49,6 +56,13 @@ internal sealed class WellKnownTypes
     public INamedTypeSymbol? Query { get; }
     public INamedTypeSymbol? StreamQuery { get; }
 
+    // Closing open-generic behaviors
+    public INamedTypeSymbol? Notification { get; }
+    public INamedTypeSymbol? Unit { get; }
+    public INamedTypeSymbol? PipelineBehavior { get; }
+    public INamedTypeSymbol? StreamPipelineBehavior { get; }
+    public INamedTypeSymbol? NotificationPipelineBehavior { get; }
+
     // VIT003
     public INamedTypeSymbol? EnumeratorCancellationAttribute { get; }
     public INamedTypeSymbol? CancellationToken { get; }
@@ -58,6 +72,9 @@ internal sealed class WellKnownTypes
 
     // Vitreous 0.4.0+: core registration without the reflection-based sender (trimming/AOT)
     public bool HasAddVitreousGenerated { get; }
+
+    // Vitreous 0.4.0+: closed registrations for open-generic behaviors (Native AOT)
+    public INamedTypeSymbol? GeneratedBehaviors { get; }
 
     /// <summary>
     /// Returns the well-known types for <paramref name="compilation"/>, or <see langword="null"/>
