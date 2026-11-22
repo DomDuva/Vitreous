@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.5.0] - Unreleased
+
+### Documentation
+
+- A "Migrating from MediatR" section in the README: the package swap, a table mapping each MediatR type to its Vitreous equivalent, the same feature written with both libraries, moving from exceptions to `Result`s gradually, and the behavior that differs (scoped handlers, `ValueTask`, build-time handler checks).
+
 ## [0.4.0] - 2026-11-22
 
 ### Added
