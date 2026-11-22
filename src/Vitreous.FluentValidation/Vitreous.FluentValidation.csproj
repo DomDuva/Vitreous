@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFrameworks>$(VitreousTargetFrameworks)</TargetFrameworks>
+    <RootNamespace>Vitreous.FluentValidation</RootNamespace>
+    <AssemblyName>Vitreous.FluentValidation</AssemblyName>
+    <Description>FluentValidation pipeline behaviors for Vitreous: invalid messages return Error.Validation before the handler runs.</Description>
+    <PackageTags>mediator;validation;fluentvalidation;pipeline;cqrs</PackageTags>
+    <IsPackable>true</IsPackable>
+    <!-- Not IsAotCompatible: FluentValidation itself is not annotated as trim- or AOT-safe. -->
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../Vitreous/Vitreous.csproj" />
+    <PackageReference Include="FluentValidation" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="..\..\README.md" Pack="true" PackagePath="\" />
+  </ItemGroup>
+
+</Project>
