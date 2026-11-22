@@ -1,6 +1,7 @@
 using FluentValidation;
 using Microsoft.Extensions.Logging;
 using Vitreous.Abstractions;
+using Vitreous.Sample.DDD.Application.Abstractions;
 using Vitreous.Sample.DDD.Domain.Orders;
 
 namespace Vitreous.Sample.DDD.Application.Orders.Commands;
@@ -32,14 +33,14 @@ public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderC
 public sealed class CreateOrderCommandHandler
     : ICommandHandler<CreateOrderCommand, Guid>
 {
-    private readonly IOrderRepository _repo;
+    private readonly IAppDbContext _db;
     private readonly ILogger<CreateOrderCommandHandler> _logger;
 
     public CreateOrderCommandHandler(
-        IOrderRepository repo,
+        IAppDbContext db,
         ILogger<CreateOrderCommandHandler> logger)
     {
-        _repo   = repo;
+        _db     = db;
         _logger = logger;
     }
 
@@ -59,8 +60,9 @@ public sealed class CreateOrderCommandHandler
 
         var order = created.Value;
 
-        // Saving also publishes the recorded domain events (see InMemoryOrderRepository).
-        await _repo.AddAsync(order, ct);
+        // Saving also publishes the recorded OrderCreated event (see AppDbContext in Infrastructure).
+        _db.Orders.Add(order);
+        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Order {OrderId} created for customer '{Customer}' — {Qty}x {Product}",

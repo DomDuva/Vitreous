@@ -24,7 +24,7 @@ var builder = WebApplication.CreateBuilder(args);
 //               • Vitreous.Sample.DDD.Application    (commands, queries, their handlers)
 //               • Vitreous.Sample.DDD.Infrastructure (domain event handlers)
 //             Vitreous.Sample.DDD.Domain is scanned too, but holds no handlers: only the
-//             Order aggregate, its OrderCreated domain event and the IOrderRepository port.
+//             Order aggregate and its OrderCreated domain event.
 //
 // No assembly arguments, no manual registration — zero extra configuration.
 builder.Services.AddVitreousHandlers();
@@ -37,8 +37,8 @@ builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime
 builder.Services.AddVitreousValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
 
-// Infrastructure — implements the domain's IOrderRepository port, which saves orders and
-// publishes their domain events.
+// Infrastructure — EF Core's AppDbContext behind Application's IAppDbContext. Saving publishes
+// the domain events of the saved entities.
 builder.Services.AddInfrastructure();
 
 // OpenAPI document (used by Scalar)
@@ -51,6 +51,8 @@ if (builder.Environment.IsDevelopment())
 // ── Build ─────────────────────────────────────────────────────────────────────
 
 var app = builder.Build();
+
+app.Services.EnsureDatabaseCreated();
 
 // Scalar API reference — only in Development
 if (app.Environment.IsDevelopment())

@@ -10,6 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
     <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
     <ProjectReference Include="..\Vitreous.Sample.DDD.Application\Vitreous.Sample.DDD.Application.csproj" />
   </ItemGroup>

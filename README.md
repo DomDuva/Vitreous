@@ -249,7 +249,7 @@ public sealed class GetOrderHandler : IQueryHandler<GetOrderQuery, OrderDto>
 {
     public async ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
     {
-        var order = await _repo.FindAsync(query.OrderId, ct);
+        var order = await _db.Orders.FindAsync([query.OrderId], ct);
         if (order is null) return Error.NotFound($"Order {query.OrderId} not found.");
         return order.ToDto(); // implicit conversion T → Result<T>
     }
@@ -617,7 +617,7 @@ The generator automatically scans both the current project's source files **and*
 ```
 MyApp.Api              ← install Vitreous.SourceGeneration here only
   ├── ref MyApp.Application    (commands, queries, handlers)
-  └── ref MyApp.Infrastructure (repository handlers, integrations)
+  └── ref MyApp.Infrastructure (DbContext, integration handlers)
 ```
 
 Application and infrastructure projects — core package only:
@@ -690,7 +690,7 @@ Scans the supplied assemblies at application startup. No source generator needed
 ```csharp
 builder.Services.AddVitreousHandlers(
     typeof(CreateOrderHandler).Assembly,
-    typeof(SqlOrderRepository).Assembly
+    typeof(SendConfirmationEmailHandler).Assembly
 );
 ```
 
@@ -1133,12 +1133,13 @@ public sealed record CreateOrderCommand(string CustomerName, string Product, int
     }
 }
 
-public sealed class CreateOrderHandler(OrderRepository repo) : IRequestHandler<CreateOrderCommand, Guid>
+public sealed class CreateOrderHandler(AppDbContext db) : IRequestHandler<CreateOrderCommand, Guid>
 {
     public async Task<Guid> Handle(CreateOrderCommand command, CancellationToken ct)
     {
         var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
-        await repo.AddAsync(order, ct);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
         return order.Id;
     }
 }
@@ -1189,12 +1190,13 @@ public sealed record CreateOrderCommand(string CustomerName, string Product, int
     public IReadOnlyDictionary<string, string[]> Validate() { /* as before */ }
 }
 
-public sealed class CreateOrderHandler(OrderRepository repo) : ICommandHandler<CreateOrderCommand, Guid>
+public sealed class CreateOrderHandler(AppDbContext db) : ICommandHandler<CreateOrderCommand, Guid>
 {
     public async ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
     {
         var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
-        await repo.AddAsync(order, ct);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
         return order.Id;
     }
 }

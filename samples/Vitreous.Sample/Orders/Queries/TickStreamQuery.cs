@@ -8,7 +8,7 @@ namespace Vitreous.Sample.Orders.Queries;
 /// <summary>
 /// Emits a fixed number of fake <see cref="OrderDto"/> objects at a rate of one
 /// per second, then stops.  Useful for observing the Vitreous DevUI stream row
-/// update in real time without needing any data in the repository.
+/// update in real time without needing any orders in the database.
 /// </summary>
 /// <param name="Count">
 /// Number of items to emit.  Defaults to 5; clamped to [1, 20].

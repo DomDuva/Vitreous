@@ -34,7 +34,7 @@ public sealed class GetOrderHandler : IQueryHandler<GetOrderQuery, OrderDto>
 {
     public async ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
     {
-        var order = await _repo.FindAsync(query.OrderId, ct);
+        var order = await _db.Orders.FindAsync([query.OrderId], ct);
         if (order is null) return Error.NotFound($"Order {query.OrderId} not found.");
         return order.ToDto(); // implicit conversion T → Result<T>
     }

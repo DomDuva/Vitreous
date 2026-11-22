@@ -103,7 +103,7 @@ public sealed class OrderApiTests : IClassFixture<WebApplicationFactory<Program>
     [Fact]
     public async Task GetOrders_NoOrders_Returns200WithEmptyArray()
     {
-        // Use a fresh factory instance so the in-memory repo is empty
+        // Use a fresh factory instance: each app gets its own in-memory database, so it starts empty
         await using var factory = new WebApplicationFactory<Program>();
         var client = factory.CreateClient();
 

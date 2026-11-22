@@ -6,7 +6,7 @@ namespace Vitreous.Sample.DDD.Domain.Orders;
 /// The order aggregate. It can only be created through <see cref="Create"/>, which enforces the
 /// invariants and records an <see cref="OrderCreated"/> domain event.
 /// </summary>
-public sealed class Order
+public sealed class Order : IHasDomainEvents
 {
     /// <summary>The most units a single order may contain.</summary>
     public const int MaxQuantity = 100;
@@ -55,10 +55,7 @@ public sealed class Order
         return order;
     }
 
-    /// <summary>
-    /// Returns the domain events recorded since the last call and clears them, so each event is
-    /// published once. The repository calls this after it saves the order.
-    /// </summary>
+    /// <inheritdoc/>
     public IReadOnlyList<INotification> DequeueDomainEvents()
     {
         var events = _domainEvents.ToArray();

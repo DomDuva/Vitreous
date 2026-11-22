@@ -25,8 +25,8 @@ builder.Services.AddVitreousHandlers();
 // When TResult = Unit the behavior is applied to void commands (ICommand) automatically.
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
-// Sample infrastructure
-builder.Services.AddSingleton<OrderRepository>();
+// Orders are stored with EF Core, on a SQLite in-memory database
+builder.Services.AddOrdersDatabase();
 
 // OpenAPI document (used by Scalar)
 builder.Services.AddOpenApi();
@@ -53,6 +53,8 @@ if (!string.IsNullOrWhiteSpace(builder.Configuration["OTEL_EXPORTER_OTLP_ENDPOIN
 // ── Build ─────────────────────────────────────────────────────────────────────
 
 var app = builder.Build();
+
+app.Services.EnsureOrdersDatabaseCreated();
 
 // Scalar API reference — only in Development
 if (app.Environment.IsDevelopment())

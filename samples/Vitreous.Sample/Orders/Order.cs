@@ -1,4 +1,4 @@
 namespace Vitreous.Sample.Orders;
 
-/// <summary>An in-memory order, used instead of a real database for simplicity.</summary>
+/// <summary>An order, stored through <see cref="OrdersDbContext"/>.</summary>
 public sealed record Order(Guid Id, string CustomerName, string Product, int Quantity, DateTimeOffset CreatedAt);

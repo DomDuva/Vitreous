@@ -20,27 +20,24 @@ You need the .NET 8 SDK or later.
    cd Orders
    dotnet add package Vitreous
    dotnet add package Vitreous.SourceGeneration
+   dotnet add package Microsoft.EntityFrameworkCore.Sqlite
    ```
 
-   `Vitreous.SourceGeneration` runs at build time only. It generates `AddVitreousHandlers()` and the dispatcher, and adds nothing to your app at runtime.
+   `Vitreous.SourceGeneration` runs at build time only. It generates `AddVitreousHandlers()` and the dispatcher, and adds nothing to your app at runtime. EF Core with SQLite stores the orders in a local file, so there's no database server to set up.
 
-2. **Add an order and somewhere to keep it.** Create `Orders/Order.cs`. An in-memory repository stands in for a database. Both are simplified from the sample's [`Order.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Domain/Orders/Order.cs) aggregate and [`InMemoryOrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Orders/Persistence/InMemoryOrderRepository.cs).
+2. **Add an order and a DbContext.** Create `Orders/Order.cs`. The handlers will use the `DbContext` directly: it already is a unit of work, and each `DbSet` a repository, so there's no extra layer. The order is simplified from the sample's [`Order.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Domain/Orders/Order.cs) aggregate.
 
    ```csharp
    // Orders/Order.cs
-   using System.Collections.Concurrent;
+   using Microsoft.EntityFrameworkCore;
 
    namespace Orders;
 
    public sealed record Order(Guid Id, string CustomerName, string Product, int Quantity, DateTimeOffset CreatedAt);
 
-   public sealed class OrderRepository
+   public sealed class OrdersDbContext(DbContextOptions<OrdersDbContext> options) : DbContext(options)
    {
-       private readonly ConcurrentDictionary<Guid, Order> _orders = new();
-
-       public Order? Find(Guid id) => _orders.TryGetValue(id, out var o) ? o : null;
-
-       public void Add(Order order) => _orders[order.Id] = order;
+       public DbSet<Order> Orders => Set<Order>();
    }
    ```
 
@@ -55,17 +52,18 @@ You need the .NET 8 SDK or later.
 
    public sealed record CreateOrderCommand(string CustomerName, string Product, int Quantity) : ICommand<Guid>;
 
-   public sealed class CreateOrderCommandHandler(OrderRepository repo) : ICommandHandler<CreateOrderCommand, Guid>
+   public sealed class CreateOrderCommandHandler(OrdersDbContext db) : ICommandHandler<CreateOrderCommand, Guid>
    {
-       public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+       public async ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
        {
            if (string.IsNullOrWhiteSpace(command.CustomerName))
-               return new(Error.Validation("CustomerName is required."));
+               return Error.Validation("CustomerName is required.");
 
            var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity, DateTimeOffset.UtcNow);
-           repo.Add(order);
+           db.Orders.Add(order);
+           await db.SaveChangesAsync(ct);
 
-           return new(order.Id); // Guid converts to Result<Guid> implicitly
+           return order.Id; // Guid converts to Result<Guid> implicitly
        }
    }
    ```
@@ -85,15 +83,15 @@ You need the .NET 8 SDK or later.
 
    public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
 
-   public sealed class GetOrderQueryHandler(OrderRepository repo) : IQueryHandler<GetOrderQuery, OrderDto>
+   public sealed class GetOrderQueryHandler(OrdersDbContext db) : IQueryHandler<GetOrderQuery, OrderDto>
    {
-       public ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
+       public async ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
        {
-           var order = repo.Find(query.OrderId);
+           var order = await db.Orders.FindAsync([query.OrderId], ct);
            if (order is null)
-               return new(Error.NotFound($"Order '{query.OrderId}' not found."));
+               return Error.NotFound($"Order '{query.OrderId}' not found.");
 
-           return new(new OrderDto(order.Id, order.CustomerName, order.Product, order.Quantity, order.CreatedAt));
+           return new OrderDto(order.Id, order.CustomerName, order.Product, order.Quantity, order.CreatedAt);
        }
    }
    ```
@@ -138,6 +136,7 @@ You need the .NET 8 SDK or later.
 
    ```csharp
    // Program.cs
+   using Microsoft.EntityFrameworkCore;
    using Orders;
    using Vitreous;
    using Vitreous.Abstractions;
@@ -146,9 +145,13 @@ You need the .NET 8 SDK or later.
 
    builder.Services.AddVitreousHandlers();                                // generated: every handler in the project
    builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>));      // after AddVitreousHandlers()
-   builder.Services.AddSingleton<OrderRepository>();
+   builder.Services.AddDbContext<OrdersDbContext>(o => o.UseSqlite("Data Source=orders.db"));
 
    var app = builder.Build();
+
+   // Creates orders.db and its table on first run. Use migrations in a real app.
+   using (var scope = app.Services.CreateScope())
+       scope.ServiceProvider.GetRequiredService<OrdersDbContext>().Database.EnsureCreated();
 
    app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
        (await sender.Send(command, ct)).Match(
@@ -163,7 +166,7 @@ You need the .NET 8 SDK or later.
    app.Run();
    ```
 
-   Endpoints take `ISender`, which dispatches commands and queries. `Match` turns the `Result` into a response: one function for success and one for the error.
+   Handlers are scoped by default, like `AddDbContext`, so each request gets its own `OrdersDbContext`. Endpoints take `ISender`, which dispatches commands and queries. `Match` turns the `Result` into a response: one function for success and one for the error.
 
 7. **Run it.**
 
