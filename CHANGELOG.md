@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.5.0] - Unreleased
 
+### Added
+
+- `Vitreous.FluentValidation`, a new package. `services.AddVitreousValidation()` registers `ValidationBehavior<,>` and `StreamValidationBehavior<,>`, which run each message's FluentValidation validators before the handler. A message that fails validation never reaches its handler, and the dispatch returns `Error.Validation` with the failures grouped by property name under `Extensions["failures"]`. Commands (including void commands), queries and stream queries are covered, and a message without a validator passes straight through. With `Vitreous.SourceGeneration` the behaviors are closed over each message, like other behaviors registered with `AddVitreousBehavior`. Depends on FluentValidation 12.2.0. Not marked AOT-compatible, because FluentValidation is not annotated for trimming.
+- `samples/Vitreous.Sample.DDD` validates `CreateOrderCommand` with a FluentValidation validator, and `POST /orders` returns a validation problem with the failures per property.
+
 ### Documentation
 
 - A "Migrating from MediatR" section in the README: the package swap, a table mapping each MediatR type to its Vitreous equivalent, the same feature written with both libraries, moving from exceptions to `Result`s gradually, and the behavior that differs (scoped handlers, `ValueTask`, build-time handler checks).
