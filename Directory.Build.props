@@ -12,7 +12,7 @@
     <RepositoryUrl>https://github.com/DomDuva/Vitreous</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryBranch>main</RepositoryBranch>
-    <PackageProjectUrl>https://github.com/DomDuva/Vitreous</PackageProjectUrl>
+    <PackageProjectUrl>https://domduva.github.io/Vitreous/</PackageProjectUrl>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
