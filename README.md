@@ -208,6 +208,8 @@ public sealed record OrderCreatedNotification(Guid OrderId) : INotification;
 
 By default all handlers are invoked sequentially (fail-fast on first exception). Set `NotificationPublishStrategy = NotificationPublishStrategy.Parallel` in `VitreousOptions` to fan-out to all handlers concurrently via `Task.WhenAll` — every handler runs to completion regardless of individual failures, and all exceptions are collected into an `AggregateException`.
 
+`Publish` dispatches on the notification's runtime type, like `Send`, so a notification held as `INotification` or as a base type, such as a domain event in an aggregate's list, reaches the handlers of its concrete type.
+
 **Stream queries** — read-only, lazy sequences that yield items over time; require exactly one handler. Use when data is too large to buffer, or when items should be consumed as they arrive.
 
 ```csharp

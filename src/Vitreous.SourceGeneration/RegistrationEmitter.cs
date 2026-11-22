@@ -130,6 +130,11 @@ internal static class RegistrationEmitter
         EmitInvokerMap(sb, "s_streamQueries", handlers, HandlerKind.StreamQuery, h =>
             $"(Func<IServiceProvider, IStreamQuery<{h.ResultFullName}>, CancellationToken, ValueTask<Result<IAsyncEnumerable<{h.ResultFullName}>>>>)" +
             $"(static (sp, m, ct) => ExecuteStreamQuery<{h.MessageFullName}, {h.ResultFullName}>(sp, ({h.MessageFullName})m, ct))");
+        // Notifications go through the configured publisher, typed as the notification that has
+        // the handlers, so Publish can dispatch on the runtime type like Send does.
+        EmitInvokerMap(sb, "s_notifications", handlers, HandlerKind.Notification, h =>
+            $"(Func<IPublisher, INotification, CancellationToken, ValueTask>)" +
+            $"(static (p, n, ct) => p.Publish(({h.MessageFullName})n, ct))");
 
         sb.AppendLine("    // Runtime types with no handler of their own, resolved once to the nearest base type");
         sb.AppendLine("    // that has one (or null). Exact-type matches never reach these caches.");
@@ -137,6 +142,7 @@ internal static class RegistrationEmitter
         sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedVoidCommands = new();");
         sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedQueries = new();");
         sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedStreamQueries = new();");
+        sb.AppendLine("    private static readonly ConcurrentDictionary<Type, Delegate?> s_derivedNotifications = new();");
         sb.AppendLine();
         sb.AppendLine("    private readonly IServiceProvider _services;");
         sb.AppendLine("    private readonly bool _parallelPublish;");
@@ -193,11 +199,25 @@ internal static class RegistrationEmitter
                 public ValueTask Publish<TNotification>(TNotification notification, CancellationToken ct = default)
                     where TNotification : INotification
                 {
+                    if (notification is null)
+                        throw new ArgumentNullException(nameof(notification));
+
                     // IPublisher is registered as this dispatcher, so resolve the concrete publisher
                     // chosen by VitreousOptions by type to avoid calling ourselves.
                     IPublisher publisher = _parallelPublish
                         ? _services.GetRequiredService<ParallelPublisher>()
                         : _services.GetRequiredService<SequentialPublisher>();
+
+                    // Dispatch on the runtime type, like Send: a notification held as INotification or
+                    // as a base type still reaches the handlers of its concrete type, or of its nearest
+                    // base type that has handlers. With neither, it is published as TNotification.
+                    // Value types can't be derived from (and GetType() would box them), so they skip this.
+                    if (!typeof(TNotification).IsValueType
+                        && notification.GetType() != typeof(TNotification)
+                        && Find(s_notifications, s_derivedNotifications, notification.GetType())
+                            is Func<IPublisher, INotification, CancellationToken, ValueTask> invoker)
+                        return invoker(publisher, notification, ct);
+
                     return publisher.Publish(notification, ct);
                 }
 
@@ -306,7 +326,8 @@ internal static class RegistrationEmitter
     {
         sb.AppendLine($"    private static readonly FrozenDictionary<Type, Delegate> {fieldName} = new Dictionary<Type, Delegate>");
         sb.AppendLine("    {");
-        foreach (var h in handlers.Where(h => h.Kind == kind))
+        // Distinct by message: a notification can have several handlers but needs one invoker.
+        foreach (var h in handlers.Where(h => h.Kind == kind).GroupBy(h => h.MessageFullName).Select(g => g.First()))
             sb.AppendLine($"        [typeof({h.MessageFullName})] = {invoker(h)},");
         sb.AppendLine("    }.ToFrozenDictionary();");
         sb.AppendLine();

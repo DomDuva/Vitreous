@@ -39,20 +39,12 @@ internal sealed class InMemoryOrderRepository : IOrderRepository
         _store.Orders[order.Id] = order;
 
         // Publish only after the order is saved, so handlers never see an order that doesn't exist.
+        // Publish dispatches on each event's runtime type, so INotification-typed events reach the
+        // handlers of their concrete type.
         foreach (var domainEvent in order.DequeueDomainEvents())
-            await PublishAsync(domainEvent, ct);
+            await _publisher.Publish(domainEvent, ct);
     }
 
     public ValueTask<bool> RemoveAsync(Guid id, CancellationToken ct = default) =>
         ValueTask.FromResult(_store.Orders.TryRemove(id, out _));
-
-    // Publish<TNotification> resolves INotificationHandler<TNotification> by the compile-time type,
-    // so each event is published as its concrete type. Publishing it as INotification would find
-    // no handlers and do nothing.
-    private ValueTask PublishAsync(INotification domainEvent, CancellationToken ct) => domainEvent switch
-    {
-        OrderCreated e => _publisher.Publish(e, ct),
-        _              => throw new InvalidOperationException(
-                              $"No publish case for domain event '{domainEvent.GetType().Name}'."),
-    };
 }

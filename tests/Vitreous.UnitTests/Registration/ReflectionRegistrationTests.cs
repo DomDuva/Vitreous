@@ -171,12 +171,12 @@ public sealed class ReflectionRegistrationTests
     }
 
     [Fact]
-    public void AddVitreousHandlers_Assembly_RegistersReflectionSender()
+    public void AddVitreousHandlers_Assembly_RegistersReflectionSenderAndPublisher()
     {
         using var sp = Build();
 
         sp.GetRequiredService<ISender>().GetType().Name.Should().Be("ReflectionSender");
-        sp.GetRequiredService<IPublisher>().Should().BeOfType<SequentialPublisher>();
+        sp.GetRequiredService<IPublisher>().GetType().Name.Should().Be("ReflectionPublisher");
     }
 
     // ── Dispatch through ReflectionSender ─────────────────────────────────────
@@ -360,16 +360,20 @@ public sealed class ReflectionRegistrationTests
     }
 
     [Fact]
-    public void AddVitreousGenerated_RegistersEverythingButTheReflectionSender()
+    public void AddVitreousGenerated_RegistersEverythingButTheReflectionSenderAndPublisher()
     {
         var reflection = new ServiceCollection().AddVitreous(new VitreousOptions());
         var generated = new ServiceCollection().AddVitreousGenerated(new VitreousOptions());
 
         generated.Should().NotContain(static d => d.ServiceType == typeof(ISender));
+        generated.Should().NotContain(static d => d.ImplementationType != null && d.ImplementationType.Name == "ReflectionPublisher");
+        generated.Should().ContainSingle(static d => d.ServiceType == typeof(IPublisher))
+            .Which.ImplementationType.Should().Be<SequentialPublisher>();
         generated.Select(static d => (d.ServiceType, d.ImplementationType, d.Lifetime))
             .Should().BeEquivalentTo(reflection
-                .Where(static d => d.ServiceType != typeof(ISender))
-                .Select(static d => (d.ServiceType, d.ImplementationType, d.Lifetime)));
+                .Where(static d => d.ServiceType != typeof(ISender) && d.ServiceType != typeof(IPublisher))
+                .Select(static d => (d.ServiceType, d.ImplementationType, d.Lifetime))
+                .Append((typeof(IPublisher), typeof(SequentialPublisher), ServiceLifetime.Scoped)));
     }
 
     // ── Invoker cache ─────────────────────────────────────────────────────────

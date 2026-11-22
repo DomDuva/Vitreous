@@ -33,11 +33,26 @@ app.MapPost("/orders/{id:guid}/shipped", async (Guid id, IPublisher publisher) =
 });
 ```
 
-:::caution[Publish resolves handlers by the type argument]
-`Publish<TNotification>` finds `INotificationHandler<TNotification>` for the type the compiler infers from the argument's static type. A notification held in a variable typed `INotification`, such as an entry in an aggregate's list of domain events, finds no handlers and is silently skipped. Publish each one as its concrete type, for example with a `switch` on the event. See [Domain events](/Vitreous/guides/clean-architecture-ddd/#the-infrastructure-layer).
-:::
-
 `ISender` and `IPublisher` are scoped unless `DefaultHandlerLifetime` is `Singleton`. Minimal APIs and controllers resolve them from the request scope. In a `BackgroundService` or another singleton, create a scope with `IServiceScopeFactory` first. See [Installation](/Vitreous/getting-started/installation/#options).
+
+## Which handlers a notification reaches
+
+`Publish` dispatches on the notification's runtime type, as `Send` does for messages. A notification held in a variable typed `INotification` or as a base type, such as an entry in an aggregate's list of domain events, still reaches the handlers of its concrete type:
+
+```csharp
+IReadOnlyList<INotification> domainEvents = order.DequeueDomainEvents();
+
+foreach (var domainEvent in domainEvents)
+    await publisher.Publish(domainEvent, ct); // runs the OrderCreated handlers for an OrderCreated
+```
+
+- The handlers of the notification's concrete type run.
+- If it has none, the handlers of its nearest base class that has handlers run.
+- If neither has handlers, the handlers for the type argument run, such as the `INotificationHandler<IOrderEvent>` handlers for `Publish<IOrderEvent>(...)`.
+
+:::note
+Before 0.5.1, `Publish` looked up handlers by the type argument only, so a notification held as `INotification` reached no handlers.
+:::
 
 ## Stream queries
 

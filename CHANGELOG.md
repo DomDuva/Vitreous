@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Fixed
+
+- `IPublisher.Publish` now dispatches on the notification's runtime type, as `Send` does for messages. A notification held as `INotification` or as a base type, such as an entry in an aggregate's list of domain events, used to reach no handlers, or only the base type's, because handlers were looked up by the type argument. The concrete type's handlers now run; if it has none, its nearest base class's; if neither has any, the type argument's, as before. A notification published as its own type is unaffected, and still allocates nothing. Fixed in both the generated dispatcher (`Vitreous.SourceGeneration`) and the reflection-based path (`Vitreous`, new internal `ReflectionPublisher`).
+- `IPublisher.Publish` throws `ArgumentNullException` for a `null` notification instead of passing it to the handlers.
+
+### Changed
+
+- `samples/Vitreous.Sample.DDD` publishes the aggregate's domain events directly, without a `switch` on their type.
+
 ## [0.5.0] - 2026-11-22
 
 ### Added
