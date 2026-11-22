@@ -104,16 +104,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             ? CollectHandlers(symbol, types, LocationInfo.From(SourceLocation(symbol)))
             : EquatableArray<HandlerInfo>.Empty;
 
+        var behaviors = BehaviorClosing.CollectBehaviors(symbol, types, sameAssembly: true).ToEquatableArray();
+        var notification = BehaviorClosing.IsNotification(symbol, types) ? BehaviorClosing.Facts(symbol) : null;
+
         var messages = CollectMessageType(symbol, types, LocationInfo.From(ctx.Node.GetLocation()));
 
         var diagnostics = symbol.TypeKind == TypeKind.Class
             ? CheckEnumeratorCancellation(symbol, types)
             : EquatableArray<DiagnosticInfo>.Empty;
 
-        if (handlers.Count == 0 && messages.Count == 0 && diagnostics.Count == 0)
+        if (handlers.Count == 0 && messages.Count == 0 && diagnostics.Count == 0 && behaviors.Count == 0 && notification is null)
             return null;
 
-        return new TypeModel(handlers, messages, diagnostics);
+        return new TypeModel(handlers, messages, diagnostics, behaviors, notification);
     }
 
     // Per-reference cache: a MetadataReference object is reused across compilations while the
@@ -122,15 +125,29 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
     private sealed class ReferenceScan
     {
-        public ReferenceScan(EquatableArray<HandlerInfo> handlers, EquatableArray<MessageTypeInfo> messages)
+        public static readonly ReferenceScan Empty = new(
+            EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty,
+            EquatableArray<BehaviorInfo>.Empty, EquatableArray<TypeFacts>.Empty);
+
+        public ReferenceScan(
+            EquatableArray<HandlerInfo> handlers,
+            EquatableArray<MessageTypeInfo> messages,
+            EquatableArray<BehaviorInfo> behaviors,
+            EquatableArray<TypeFacts> notifications)
         {
             Handlers = handlers;
             Messages = messages;
+            Behaviors = behaviors;
+            Notifications = notifications;
         }
 
         public EquatableArray<HandlerInfo> Handlers { get; }
 
         public EquatableArray<MessageTypeInfo> Messages { get; }
+
+        public EquatableArray<BehaviorInfo> Behaviors { get; }
+
+        public EquatableArray<TypeFacts> Notifications { get; }
     }
 
     private static ReferenceModel ScanReferences(Compilation compilation, CancellationToken ct)
@@ -141,6 +158,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
 
         var handlers = ImmutableArray.CreateBuilder<HandlerInfo>();
         var messages = ImmutableArray.CreateBuilder<MessageTypeInfo>();
+        var behaviors = ImmutableArray.CreateBuilder<BehaviorInfo>();
+        var notifications = ImmutableArray.CreateBuilder<TypeFacts>();
 
         foreach (var reference in compilation.References)
         {
@@ -149,6 +168,8 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             var scan = s_referenceScans.GetValue(reference, r => ScanReference(compilation, r, types, ct));
             handlers.AddRange(scan.Handlers);
             messages.AddRange(scan.Messages);
+            behaviors.AddRange(scan.Behaviors);
+            notifications.AddRange(scan.Notifications);
         }
 
         var features = CoreFeatures.None;
@@ -156,8 +177,15 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             features |= CoreFeatures.DispatchTelemetry;
         if (types.HasAddVitreousGenerated)
             features |= CoreFeatures.AddVitreousGenerated;
+        if (types.GeneratedBehaviors is not null)
+            features |= CoreFeatures.GeneratedBehaviors;
 
-        return new ReferenceModel(true, features, new(handlers.ToImmutable()), new(messages.ToImmutable()));
+        var behaviorModel = new BehaviorModel(
+            new(behaviors.ToImmutable()),
+            new(notifications.ToImmutable()),
+            types.Unit is { } unit ? BehaviorClosing.Facts(unit) : null);
+
+        return new ReferenceModel(true, features, new(handlers.ToImmutable()), new(messages.ToImmutable()), behaviorModel);
     }
 
     private static ReferenceScan ScanReference(
@@ -171,19 +199,20 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         if (compilation.GetAssemblyOrModuleSymbol(reference) is not IAssemblySymbol assembly ||
             !ReferencesVitreous(assembly))
         {
-            return new ReferenceScan(EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
+            return ReferenceScan.Empty;
         }
 
-        var handlers = new List<HandlerInfo>();
-        var messages = new List<MessageTypeInfo>();
-        CollectFromNamespace(assembly.GlobalNamespace, types, handlers, messages, ct);
-        return new ReferenceScan(handlers.ToEquatableArray(), messages.ToEquatableArray());
+        var found = new ReferenceTypes();
+        CollectFromNamespace(assembly.GlobalNamespace, types, found, ct);
+        return new ReferenceScan(
+            found.Handlers.ToEquatableArray(), found.Messages.ToEquatableArray(),
+            found.Behaviors.ToEquatableArray(), found.Notifications.ToEquatableArray());
     }
 
     private static DiscoveryResult Merge(ImmutableArray<TypeModel> sourceTypes, ReferenceModel references)
     {
         if (!references.VitreousReferenced)
-            return new DiscoveryResult(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<DiagnosticInfo>.Empty);
+            return new DiscoveryResult(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<DiagnosticInfo>.Empty, BehaviorModel.Empty);
 
         // Partial types produce one model per part that has a base list; keep each entry once.
         var handlers = sourceTypes.SelectMany(static t => t.Handlers)
@@ -213,7 +242,23 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         // VIT001 — no handler found for a command/query/stream-query type
         AddNoHandlerDiagnostics(diagnostics, messages, commandHandlers, queryHandlers, streamQueryHandlers);
 
-        return new DiscoveryResult(true, references.Features, handlers.ToEquatableArray(), diagnostics.ToEquatableArray());
+        var behaviors = (references.Features & CoreFeatures.GeneratedBehaviors) == 0
+            ? BehaviorModel.Empty
+            : new BehaviorModel(
+                sourceTypes.SelectMany(static t => t.Behaviors)
+                    .Concat(references.Behaviors.Behaviors)
+                    .Distinct()
+                    .OrderBy(static b => b.ImplementationName, StringComparer.Ordinal).ThenBy(static b => b.Kind)
+                    .ToEquatableArray(),
+                sourceTypes.Select(static t => t.Notification).Where(static n => n is not null).Select(static n => n!)
+                    .Concat(references.Behaviors.Notifications)
+                    .GroupBy(static n => n.Key)
+                    .Select(static g => g.First())
+                    .OrderBy(static n => n.Key, StringComparer.Ordinal)
+                    .ToEquatableArray(),
+                references.Behaviors.Unit);
+
+        return new DiscoveryResult(true, references.Features, handlers.ToEquatableArray(), diagnostics.ToEquatableArray(), behaviors);
     }
 
     private static EquatableArray<GeneratedFile> Emit(DiscoveryResult result)
@@ -224,7 +269,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         var handlers = result.Handlers.AsImmutableArray();
         return new[]
         {
-            new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers, result.Features)),
+            new GeneratedFile("VitreousServiceCollectionExtensions.g.cs", RegistrationEmitter.EmitServiceCollectionExtensions(handlers, result.Features, result.Behaviors)),
             new GeneratedFile("VitreousDispatcher.g.cs", RegistrationEmitter.EmitDispatcher(handlers, result.Features)),
         }.ToEquatableArray();
     }
@@ -292,7 +337,9 @@ public sealed class VitreousGenerator : IIncrementalGenerator
                 MessageFullName: FullName(iface.TypeArguments[0]),
                 Kind:            kind,
                 ResultFullName:  resultName,
-                Location:        location));
+                Location:        location,
+                MessageFacts:    BehaviorClosing.Facts(iface.TypeArguments[0]),
+                ResultFacts:     iface.TypeArguments.Length == 2 ? BehaviorClosing.Facts(iface.TypeArguments[1]) : null));
         }
 
         return found is null ? EquatableArray<HandlerInfo>.Empty : found.ToEquatableArray();
@@ -352,11 +399,18 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             m.ReferencedAssemblies.Any(static r =>
                 string.Equals(r.Name, "Vitreous", StringComparison.OrdinalIgnoreCase)));
 
+    private sealed class ReferenceTypes
+    {
+        public List<HandlerInfo> Handlers { get; } = new();
+        public List<MessageTypeInfo> Messages { get; } = new();
+        public List<BehaviorInfo> Behaviors { get; } = new();
+        public List<TypeFacts> Notifications { get; } = new();
+    }
+
     private static void CollectFromNamespace(
         INamespaceSymbol ns,
         WellKnownTypes types,
-        List<HandlerInfo> handlers,
-        List<MessageTypeInfo> messages,
+        ReferenceTypes found,
         CancellationToken ct)
     {
         foreach (var member in ns.GetMembers())
@@ -366,11 +420,11 @@ public sealed class VitreousGenerator : IIncrementalGenerator
             switch (member)
             {
                 case INamespaceSymbol childNs:
-                    CollectFromNamespace(childNs, types, handlers, messages, ct);
+                    CollectFromNamespace(childNs, types, found, ct);
                     break;
 
                 case INamedTypeSymbol type:
-                    CollectFromType(type, types, handlers, messages);
+                    CollectFromType(type, types, found);
                     break;
             }
         }
@@ -383,8 +437,7 @@ public sealed class VitreousGenerator : IIncrementalGenerator
     private static void CollectFromType(
         INamedTypeSymbol type,
         WellKnownTypes types,
-        List<HandlerInfo> handlers,
-        List<MessageTypeInfo> messages)
+        ReferenceTypes found)
     {
         // Only public types can be referenced from the generated code in another assembly.
         if (type.DeclaredAccessibility != Accessibility.Public)
@@ -394,14 +447,19 @@ public sealed class VitreousGenerator : IIncrementalGenerator
         {
             // Referenced assemblies have no syntax trees, so there is no location.
             if (type.TypeKind == TypeKind.Class)
-                handlers.AddRange(CollectHandlers(type, types, location: null));
+                found.Handlers.AddRange(CollectHandlers(type, types, location: null));
 
             if (type.TypeKind is TypeKind.Class or TypeKind.Struct)
-                messages.AddRange(CollectMessageType(type, types, location: null));
+                found.Messages.AddRange(CollectMessageType(type, types, location: null));
+
+            if (BehaviorClosing.IsNotification(type, types) && BehaviorClosing.Facts(type) is { } notification)
+                found.Notifications.Add(notification);
         }
 
+        found.Behaviors.AddRange(BehaviorClosing.CollectBehaviors(type, types, sameAssembly: false));
+
         foreach (var nested in type.GetTypeMembers())
-            CollectFromType(nested, types, handlers, messages);
+            CollectFromType(nested, types, found);
     }
 
     // -------------------------------------------------------------------------

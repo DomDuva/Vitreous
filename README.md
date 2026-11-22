@@ -409,14 +409,14 @@ All three helpers pass failures through untouched — if `CreateStream` returned
 
 ### Pipeline behaviors
 
-Pipeline behaviors wrap every dispatch, similar to middleware. Register them as open-generic services after `AddVitreousHandlers()`.
+Pipeline behaviors wrap every dispatch, similar to middleware. Register them with `AddVitreousBehavior` after `AddVitreousHandlers()`.
 
 ```csharp
 // One registration covers commands (void and non-void), queries, and their full pipeline.
-builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton);
 ```
 
-Behaviors execute outermost-first (first registered = outermost wrapper).
+Behaviors execute outermost-first (first registered = outermost wrapper). `AddVitreousBehavior` takes open-generic and closed behaviors of all three kinds below, defaults to a transient lifetime, and ignores a behavior that is already registered. Registering a behavior directly as a service, as in `services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>))`, also works, except under Native AOT for value types (see [Native AOT and trimming](#native-aot-and-trimming)).
 
 ```csharp
 public sealed class LoggingBehavior<TMessage, TResult>(ILogger<LoggingBehavior<TMessage, TResult>> logger)
@@ -451,8 +451,7 @@ Void commands (`ICommand`) participate in the same `IPipelineBehavior<TMessage, 
 Notifications dispatch to multiple handlers with a fan-out model and no `Result` wrapper, so they remain on their own interface.
 
 ```csharp
-builder.Services.AddSingleton(
-    typeof(INotificationPipelineBehavior<>), typeof(NotificationLoggingBehavior<>));
+builder.Services.AddVitreousBehavior(typeof(NotificationLoggingBehavior<>), ServiceLifetime.Singleton);
 ```
 
 #### Stream pipeline behaviors
@@ -460,8 +459,7 @@ builder.Services.AddSingleton(
 Stream queries have their own `IStreamPipelineBehavior<TMessage, TResult>` interface. Behaviors run before the stream is opened and can short-circuit with a failure `Result` before any item is produced.
 
 ```csharp
-builder.Services.AddSingleton(
-    typeof(IStreamPipelineBehavior<,>), typeof(StreamAuthorizationBehavior<,>));
+builder.Services.AddVitreousBehavior(typeof(StreamAuthorizationBehavior<,>));
 ```
 
 ```csharp
@@ -661,9 +659,11 @@ If a type is missing from the context, the cache read or write fails and is logg
 
 **DevUI.** `Vitreous.DevUI` serializes arbitrary messages with reflection, so it isn't AOT-compatible. `AddVitreousDevUI()`, `UseVitreousDevUI()` and `MapVitreousDevUI()` raise IL2026 and IL3050. Leave the package out of AOT builds.
 
-**Open-generic behaviors and value types.** Under Native AOT, Microsoft.Extensions.DependencyInjection can't close an open-generic service over a value type. Once an open-generic `IPipelineBehavior<,>` is registered (`AddVitreousCaching()` and `AddVitreousRedisCaching()` register two), a dispatch fails if the message or its result is a value type. This covers void commands (`Unit` is a struct), results such as `int` or `Guid`, and `record struct` messages. It throws `InvalidOperationException: Unable to create a generic service for type ... because ... is a ValueType`. Closed behaviors such as `IPipelineBehavior<CreateOrder, OrderDto>` work with any type. In an AOT app with open-generic behaviors, use classes or records for messages and results, for example a record that wraps the `Guid`.
+**Open-generic behaviors.** Under Native AOT, Microsoft.Extensions.DependencyInjection can't close an open-generic service over a value type. A void command (`Unit` is a struct), a result such as `int` or `Guid`, or a `record struct` message would then throw `InvalidOperationException: Unable to create a generic service for type ... because ... is a ValueType`. The source generator avoids this. It finds the open-generic behaviors in your project and its references, and emits them closed over every message whose types satisfy their constraints. `AddVitreousBehavior` registers those closed behaviors in place of the open generic, and `AddVitreousCaching()` and `AddVitreousRedisCaching()` use it. Two cases are still left to DI as open generics:
+- A behavior registered directly as an open-generic service, for example with `services.AddSingleton(typeof(IPipelineBehavior<,>), ...)`.
+- A behavior the generated code can't name or check. That covers a behavior that is private, or internal to another project. It also covers a constraint on a variant interface that the message implements with different type arguments, such as `where TResult : IEnumerable<object>` with an `IReadOnlyList<string>` result.
 
-`samples/Vitreous.Sample.Aot` covers commands, a cached query, cache invalidation, a notification with two handlers, a stream query and a closed behavior. CI publishes it with Native AOT on .NET 10 and .NET 11 and calls every endpoint. On a Linux x64 VM it produces one 10.7 MB executable that answers its first request about 100 ms after starting, compared with about 450 ms for the same app on the JIT. MediatR can't be published with Native AOT, so there is no comparison.
+`samples/Vitreous.Sample.Aot` covers a command, a void command that invalidates the cache, a cached query, a `record struct` command with an `int` result, a notification with two handlers, a stream query, an open-generic behavior and a closed one. CI publishes it with Native AOT on .NET 10 and .NET 11 and calls every endpoint. On a Linux x64 VM it produces one 10.9 MB executable that answers its first request about 100 ms after starting, compared with about 450 ms for the same app on the JIT. MediatR can't be published with Native AOT, so there is no comparison.
 
 ---
 
@@ -920,7 +920,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddVitreousHandlers();
 
 // Custom pipeline behavior
-builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton);
 
 // Caching — choose one:
 builder.Services.AddDistributedMemoryCache();
@@ -1006,7 +1006,7 @@ Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Re
 The trim and AOT analyzers flag the reflection-based registration. Install `Vitreous.SourceGeneration` on the entry-point project and call `AddVitreousHandlers()` with no assemblies. See [Native AOT and trimming](#native-aot-and-trimming).
 
 **`Unable to create a generic service for type 'IPipelineBehavior...' because '...' is a ValueType`**
-In a Native AOT app, an open-generic behavior (for example from `AddVitreousCaching()`) was closed over a value type: a void command, an `int`/`Guid` result or a struct message. See [Native AOT and trimming](#native-aot-and-trimming).
+In a Native AOT app, an open-generic behavior registered directly as a service was closed over a value type: a void command, an `int`/`Guid` result or a struct message. Register it with `AddVitreousBehavior(typeof(MyBehavior<,>))` after `AddVitreousHandlers()`, with `Vitreous.SourceGeneration` installed. See [Native AOT and trimming](#native-aot-and-trimming).
 
 **Nothing shows in the DevUI**
 `UseVitreousDevUI()` must run in the environment you are testing (the samples gate it on `IsDevelopment()`), and `AddVitreousDevUI()` must be called before `builder.Build()`. Open `/vitreous` in a browser and trigger a request.

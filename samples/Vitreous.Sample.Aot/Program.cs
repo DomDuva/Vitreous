@@ -11,11 +11,10 @@ builder.Services.ConfigureHttpJsonOptions(static o => o.SerializerOptions.TypeIn
 
 // Generated at build time: registers every handler and the reflection-free dispatcher.
 builder.Services.AddVitreousHandlers(static o => o.NotificationPublishStrategy = NotificationPublishStrategy.Parallel);
-builder.Services.AddSingleton<IPipelineBehavior<CreateTodoCommand, TodoDto>, RequireTitleBehavior>();
+builder.Services.AddVitreousBehavior(typeof(CountDispatchesBehavior<,>), ServiceLifetime.Singleton);
+builder.Services.AddVitreousBehavior(typeof(RequireTitleBehavior));
 
 // Cached values are serialized with the JSON source generator, not reflection.
-// Under Native AOT the caching behaviors (open generics) can't be closed over value types, so
-// every message and result in this sample is a class: no void commands, no int or struct results.
 builder.Services.AddDistributedMemoryCache();
 builder.Services.AddVitreousCaching(static o =>
     o.JsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web) { TypeInfoResolver = AppJsonContext.Default });
@@ -38,20 +37,21 @@ app.MapGet("/todos/{id:guid}", static async (Guid id, ISender sender, Cancellati
         static error => Results.NotFound()));
 
 app.MapPost("/todos/{id:guid}/complete", static async (Guid id, ISender sender, CancellationToken ct) =>
-    (await sender.Send(new CompleteTodoCommand(id), ct)).Match(
-        static todo => Results.Ok(todo),
-        static error => Results.NotFound()));
+    (await sender.Send(new CompleteTodoCommand(id), ct)).IsSuccess ? Results.NoContent() : Results.NotFound());
+
+app.MapGet("/add", static async (int a, int b, ISender sender, CancellationToken ct) =>
+    (await sender.Send(new AddNumbersCommand(a, b), ct)).Value);
 
 app.MapGet("/todos", static async (ISender sender, CancellationToken ct) =>
     (await sender.CreateStream(new ListTodosQuery(), ct)).Value);
 
-app.MapGet("/stats", static (HandlerCalls calls) => new Stats(calls.GetTodo, calls.Created));
+app.MapGet("/stats", static (HandlerCalls calls) => new Stats(calls.GetTodo, calls.Created, calls.Dispatches));
 
 app.Run();
 
 public sealed record CreateTodoRequest(string Title);
 
-public sealed record Stats(int GetTodoCalls, int CreatedNotifications);
+public sealed record Stats(int GetTodoCalls, int CreatedNotifications, int Dispatches);
 
 [JsonSerializable(typeof(CreateTodoRequest))]
 [JsonSerializable(typeof(TodoDto))]

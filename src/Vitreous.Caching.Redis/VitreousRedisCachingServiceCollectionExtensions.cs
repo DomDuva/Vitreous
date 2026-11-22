@@ -88,13 +88,10 @@ public static class VitreousRedisCachingServiceCollectionExtensions
     /// </summary>
     internal static IServiceCollection AddVitreousCachingBehaviors(this IServiceCollection services)
     {
-        services.TryAddEnumerable(ServiceDescriptor.Singleton(
-            typeof(Vitreous.Abstractions.IPipelineBehavior<,>),
-            typeof(Vitreous.Caching.Behaviors.CacheInvalidationBehavior<,>)));
-
-        services.TryAddEnumerable(ServiceDescriptor.Singleton(
-            typeof(Vitreous.Abstractions.IPipelineBehavior<,>),
-            typeof(Vitreous.Caching.Behaviors.CachingBehavior<,>)));
+        // AddVitreousBehavior closes them over every message when the source generator is used,
+        // so they work under Native AOT for value-type messages and results.
+        services.AddVitreousBehavior(typeof(Vitreous.Caching.Behaviors.CacheInvalidationBehavior<,>), ServiceLifetime.Singleton);
+        services.AddVitreousBehavior(typeof(Vitreous.Caching.Behaviors.CachingBehavior<,>), ServiceLifetime.Singleton);
 
         return services;
     }

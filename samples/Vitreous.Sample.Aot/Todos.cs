@@ -21,11 +21,12 @@ public sealed class TodoStore
 
     public TodoDto? Find(Guid id) => _todos.GetValueOrDefault(id);
 
-    public TodoDto? Complete(Guid id)
+    public bool Complete(Guid id)
     {
         if (!_todos.TryGetValue(id, out var todo))
-            return null;
-        return _todos[id] = todo with { Done = true };
+            return false;
+        _todos[id] = todo with { Done = true };
+        return true;
     }
 
     public IEnumerable<TodoDto> All() => _todos.Values.OrderBy(static t => t.Title, StringComparer.Ordinal);
@@ -44,16 +45,16 @@ public sealed class CreateTodoHandler(TodoStore store, IPublisher publisher) : I
     }
 }
 
-// Command that evicts the cached todo
-public sealed record CompleteTodoCommand(Guid Id) : ICommand<TodoDto>, IInvalidatesCache
+// Void command; evicts the cached todo
+public sealed record CompleteTodoCommand(Guid Id) : ICommand, IInvalidatesCache
 {
     public IReadOnlyList<string> CacheKeys => [GetTodoQuery.KeyFor(Id)];
 }
 
-public sealed class CompleteTodoHandler(TodoStore store) : ICommandHandler<CompleteTodoCommand, TodoDto>
+public sealed class CompleteTodoHandler(TodoStore store) : ICommandHandler<CompleteTodoCommand>
 {
-    public ValueTask<Result<TodoDto>> Handle(CompleteTodoCommand command, CancellationToken ct = default) =>
-        new(store.Complete(command.Id) is { } todo ? todo : Error.NotFound($"Todo {command.Id} not found."));
+    public ValueTask<Result> Handle(CompleteTodoCommand command, CancellationToken ct = default) =>
+        new(store.Complete(command.Id) ? Result.Success : Error.NotFound($"Todo {command.Id} not found."));
 }
 
 // Cached query
@@ -73,6 +74,15 @@ public sealed class GetTodoHandler(TodoStore store, HandlerCalls calls) : IQuery
         Interlocked.Increment(ref calls.GetTodo);
         return new(store.Find(query.Id) is { } todo ? todo : Error.NotFound($"Todo {query.Id} not found."));
     }
+}
+
+// Value-type message with a value-type result
+public readonly record struct AddNumbersCommand(int A, int B) : ICommand<int>;
+
+public sealed class AddNumbersHandler : ICommandHandler<AddNumbersCommand, int>
+{
+    public ValueTask<Result<int>> Handle(AddNumbersCommand command, CancellationToken ct = default) =>
+        new(command.A + command.B);
 }
 
 // Notification with two handlers, published in parallel
@@ -121,9 +131,21 @@ public sealed class RequireTitleBehavior : IPipelineBehavior<CreateTodoCommand, 
             : next(message, ct);
 }
 
-/// <summary>Counts handler calls so the CI smoke test can tell cache hits from misses.</summary>
+// Open-generic behavior for every command and query, registered with AddVitreousBehavior
+public sealed class CountDispatchesBehavior<TMessage, TResult>(HandlerCalls calls) : IPipelineBehavior<TMessage, TResult>
+{
+    public ValueTask<Result<TResult>> Handle(
+        TMessage message, MessageHandlerDelegate<TMessage, TResult> next, CancellationToken ct = default)
+    {
+        Interlocked.Increment(ref calls.Dispatches);
+        return next(message, ct);
+    }
+}
+
+/// <summary>Counts calls so the CI smoke test can tell cache hits from misses.</summary>
 public sealed class HandlerCalls
 {
     public int GetTodo;
     public int Created;
+    public int Dispatches;
 }

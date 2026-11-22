@@ -15,7 +15,9 @@ internal sealed record HandlerInfo(
     string MessageFullName,
     HandlerKind Kind,
     string? ResultFullName,   // null for ICommand (void) and INotification handlers
-    LocationInfo? Location    // null for handlers discovered in referenced assemblies
+    LocationInfo? Location,   // null for handlers discovered in referenced assemblies
+    TypeFacts? MessageFacts,  // for closing open-generic behaviors; null if the type can't be described
+    TypeFacts? ResultFacts    // null for ICommand (void) and INotification handlers
 );
 
 /// <summary>
@@ -62,7 +64,9 @@ internal sealed record DiagnosticInfo(string Id, LocationInfo? Location, Equatab
 internal sealed record TypeModel(
     EquatableArray<HandlerInfo> Handlers,
     EquatableArray<MessageTypeInfo> Messages,
-    EquatableArray<DiagnosticInfo> Diagnostics);
+    EquatableArray<DiagnosticInfo> Diagnostics,
+    EquatableArray<BehaviorInfo> Behaviors,
+    TypeFacts? Notification);
 
 /// <summary>
 /// Handlers and messages discovered in referenced assemblies.
@@ -73,10 +77,11 @@ internal sealed record ReferenceModel(
     bool VitreousReferenced,
     CoreFeatures Features,
     EquatableArray<HandlerInfo> Handlers,
-    EquatableArray<MessageTypeInfo> Messages)
+    EquatableArray<MessageTypeInfo> Messages,
+    BehaviorModel Behaviors)
 {
     public static readonly ReferenceModel NotReferenced =
-        new(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty);
+        new(false, CoreFeatures.None, EquatableArray<HandlerInfo>.Empty, EquatableArray<MessageTypeInfo>.Empty, BehaviorModel.Empty);
 }
 
 /// <summary>
@@ -90,6 +95,7 @@ internal enum CoreFeatures
     None                 = 0,
     DispatchTelemetry    = 1 << 0,   // Vitreous.Internal.DispatchTelemetry (0.4.0)
     AddVitreousGenerated = 1 << 1,   // VitreousServiceCollectionExtensions.AddVitreousGenerated (0.4.0)
+    GeneratedBehaviors   = 1 << 2,   // Vitreous.Internal.GeneratedBehaviors + AddVitreousGeneratedBehaviors (0.4.0)
 }
 
 /// <summary>
@@ -99,7 +105,8 @@ internal sealed record DiscoveryResult(
     bool VitreousReferenced,
     CoreFeatures Features,
     EquatableArray<HandlerInfo> Handlers,
-    EquatableArray<DiagnosticInfo> Diagnostics);
+    EquatableArray<DiagnosticInfo> Diagnostics,
+    BehaviorModel Behaviors);
 
 /// <summary>A generated file: hint name and source text.</summary>
 internal sealed record GeneratedFile(string HintName, string Source);
