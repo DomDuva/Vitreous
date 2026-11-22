@@ -131,7 +131,8 @@ Vitreous is **~150× faster** to start and allocates **~50× less** — because 
    - [IDistributedCache backend](#idistributedcache-backend)
    - [Redis backend](#redis-backend)
 4. [Putting it all together](#4-putting-it-all-together)
-5. [Troubleshooting](#5-troubleshooting)
+5. [Migrating from MediatR](#5-migrating-from-mediatr)
+6. [Troubleshooting](#6-troubleshooting)
 
 ---
 
@@ -982,7 +983,220 @@ app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToke
 
 ---
 
-## 5. Troubleshooting
+## 5. Migrating from MediatR
+
+Vitreous has the same building blocks as MediatR: requests with exactly one handler, notifications with any number of handlers, streams, and pipeline behaviors. Most of a migration is renaming types. The two changes that touch every handler are that requests split into commands and queries, and that handlers return `ValueTask<Result<T>>` instead of `Task<T>`.
+
+### Swap the packages
+
+```
+dotnet remove package MediatR
+dotnet add package Vitreous
+dotnet add package Vitreous.SourceGeneration
+```
+
+Install `Vitreous.SourceGeneration` on the entry-point project only. Projects that only hold messages and handlers need just `Vitreous` (see [Multi-project solutions](#multi-project-solutions-ddd-clean-architecture)).
+
+```csharp
+// MediatR
+builder.Services.AddMediatR(cfg =>
+{
+    cfg.RegisterServicesFromAssemblyContaining<Program>();
+    cfg.AddOpenBehavior(typeof(ValidationBehavior<,>));
+});
+
+// Vitreous
+builder.Services.AddVitreousHandlers();
+builder.Services.AddVitreousBehavior(typeof(ValidationBehavior<,>));
+```
+
+`AddVitreousHandlers()` finds the handlers in the entry-point project and in every referenced project that references `Vitreous`, so there is no assembly list to keep up to date. Behaviors run in registration order, outermost first, as in MediatR.
+
+### Type mapping
+
+| MediatR | Vitreous | Notes |
+|---|---|---|
+| `IRequest<T>` that changes state | `ICommand<T>` | |
+| `IRequest<T>` that only reads | `IQuery<T>` | Only queries can be cached (`ICacheableQuery<T>`, see [Caching](#3-caching)) |
+| `IRequest` | `ICommand` | |
+| `IRequestHandler<TRequest, T>` with `Task<T> Handle(TRequest, CancellationToken)` | `ICommandHandler<TCommand, T>` or `IQueryHandler<TQuery, T>` with `ValueTask<Result<T>> Handle(TMessage, CancellationToken)` | `T` converts to `Result<T>` implicitly, so `return order.Id;` still compiles |
+| `IRequestHandler<TRequest>` with `Task Handle(...)` | `ICommandHandler<TCommand>` with `ValueTask<Result> Handle(...)` | Return `Result.Success` |
+| `INotification`, `INotificationHandler<T>` with `Task Handle(...)` | `INotification`, `INotificationHandler<T>` with `ValueTask Handle(...)` | |
+| `IStreamRequest<T>`, `IStreamRequestHandler<TRequest, T>` with `IAsyncEnumerable<T> Handle(...)` | `IStreamQuery<T>`, `StreamQueryHandler<TQuery, T>` with `IAsyncEnumerable<T> Stream(...)` | Implement `IStreamQueryHandler<TQuery, T>` instead to fail before the first item (see [Stream query handlers](#stream-query-handlers)) |
+| `IMediator` | `ISender` and `IPublisher` | There is no combined interface. Inject the one you use |
+| `ISender.Send(request)` returning `Task<T>` | `ISender.Send(command or query)` returning `ValueTask<Result<T>>` | Check `IsSuccess` or call `Match` |
+| `ISender.Send(object)` | None | The message must be typed as a command or query |
+| `ISender.CreateStream(request)` returning `IAsyncEnumerable<T>` | `ISender.CreateStream(query)` returning `ValueTask<Result<IAsyncEnumerable<T>>>` | Await it, check the result, then enumerate `Value` |
+| `IPublisher.Publish(notification)` returning `Task` | `IPublisher.Publish(notification)` returning `ValueTask` | |
+| `IPipelineBehavior<TRequest, TResponse>` with `RequestHandlerDelegate<TResponse> next`, called as `next()` | `IPipelineBehavior<TMessage, TResult>` with `MessageHandlerDelegate<TMessage, TResult> next`, called as `next(message, ct)` | Returns `ValueTask<Result<TResult>>`. For a void command `TResult` is `Unit`, as in MediatR |
+| `IStreamPipelineBehavior<TRequest, TResponse>` | `IStreamPipelineBehavior<TMessage, TResult>` | Runs before the stream opens |
+| None | `INotificationPipelineBehavior<TNotification>` | Wraps `Publish` |
+| `cfg.AddOpenBehavior(...)`, `cfg.AddBehavior<...>()`, `cfg.AddStreamBehavior<...>()` | `services.AddVitreousBehavior(typeof(...))` | One method for all three behavior kinds |
+| `IRequestPreProcessor<TRequest>`, `IRequestPostProcessor<TRequest, TResponse>` | A pipeline behavior | Put the code before or after `await next(message, ct)` |
+| `IRequestExceptionHandler<,,>`, `IRequestExceptionAction<,>` | Return an `Error`, or catch in a behavior | See [Exceptions to Results](#exceptions-to-results) |
+| `cfg.NotificationPublisher`: `ForeachAwaitPublisher`, `TaskWhenAllPublisher` | `VitreousOptions.NotificationPublishStrategy`: `Sequential`, `Parallel` | There are no custom publishers |
+| `MediatR.Unit` | `Vitreous.Unit` | Only seen as `TResult` in a behavior handling a void command |
+| `cfg.LicenseKey` (MediatR 13 and later) | None | Vitreous is MIT-licensed |
+
+### Before and after
+
+One feature: a create-order command, a behavior that validates it, and the endpoint that sends it. Both versions return the same responses.
+
+**MediatR**
+
+```csharp
+public interface IValidatable
+{
+    IReadOnlyDictionary<string, string[]> Validate();
+}
+
+public sealed record CreateOrderCommand(string CustomerName, string Product, int Quantity)
+    : IRequest<Guid>, IValidatable
+{
+    public IReadOnlyDictionary<string, string[]> Validate()
+    {
+        var failures = new Dictionary<string, string[]>();
+        if (string.IsNullOrWhiteSpace(CustomerName)) failures["customerName"] = ["Customer name is required."];
+        if (Quantity <= 0)                           failures["quantity"]     = ["Quantity must be greater than zero."];
+        return failures;
+    }
+}
+
+public sealed class CreateOrderHandler(OrderRepository repo) : IRequestHandler<CreateOrderCommand, Guid>
+{
+    public async Task<Guid> Handle(CreateOrderCommand command, CancellationToken ct)
+    {
+        var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
+        await repo.AddAsync(order, ct);
+        return order.Id;
+    }
+}
+
+public sealed class ValidationBehavior<TRequest, TResponse> : IPipelineBehavior<TRequest, TResponse>
+    where TRequest : IValidatable
+{
+    public Task<TResponse> Handle(
+        TRequest request,
+        RequestHandlerDelegate<TResponse> next,
+        CancellationToken ct)
+    {
+        var failures = request.Validate();
+        if (failures.Count > 0)
+            throw new ValidationException(failures);
+
+        return next();
+    }
+}
+
+public sealed class ValidationException(IReadOnlyDictionary<string, string[]> failures)
+    : Exception("Validation failed.")
+{
+    public IReadOnlyDictionary<string, string[]> Failures { get; } = failures;
+}
+
+app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
+{
+    try
+    {
+        var id = await sender.Send(command, ct);
+        return Results.Created($"/orders/{id}", new { id });
+    }
+    catch (ValidationException ex)
+    {
+        return Results.ValidationProblem(ex.Failures.ToDictionary());
+    }
+});
+```
+
+**Vitreous**
+
+```csharp
+// IValidatable and CreateOrderCommand.Validate() are unchanged.
+public sealed record CreateOrderCommand(string CustomerName, string Product, int Quantity)
+    : ICommand<Guid>, IValidatable
+{
+    public IReadOnlyDictionary<string, string[]> Validate() { /* as before */ }
+}
+
+public sealed class CreateOrderHandler(OrderRepository repo) : ICommandHandler<CreateOrderCommand, Guid>
+{
+    public async ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+    {
+        var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
+        await repo.AddAsync(order, ct);
+        return order.Id;
+    }
+}
+
+public sealed class ValidationBehavior<TMessage, TResult> : IPipelineBehavior<TMessage, TResult>
+    where TMessage : IValidatable
+{
+    public ValueTask<Result<TResult>> Handle(
+        TMessage message,
+        MessageHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default)
+    {
+        var failures = message.Validate();
+        if (failures.Count > 0)
+            return new(Error.Validation("Validation failed.", failures));
+
+        return next(message, ct);
+    }
+}
+
+app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
+    (await sender.Send(command, ct)).Match(
+        id    => Results.Created($"/orders/{id}", new { id }),
+        error => error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
+            ? Results.ValidationProblem(failures.ToDictionary())
+            : Results.Problem(error.Message)));
+```
+
+The behavior returns a failed `Result` instead of throwing, so the endpoint branches on the result instead of catching an exception. On .NET 8, `Results.ValidationProblem` takes an `IDictionary`, which is why the failures are copied with `ToDictionary()`.
+
+### Exceptions to Results
+
+You don't have to convert every handler at once. An exception thrown by a handler or behavior propagates out of `Send` and `Publish` unchanged, so existing exception middleware and `try`/`catch` blocks keep working. A gradual migration:
+
+1. Swap the types and signatures and keep throwing. `return value;` still compiles because `T` converts to `Result<T>`.
+2. Replace exceptions for expected failures with `Error` values: `throw new NotFoundException(...)` becomes `return Error.NotFound(...)`. The factories are listed under [Error type](#error-type).
+3. Map errors to responses in one place, as in [Mapping errors to HTTP status codes](#mapping-errors-to-http-status-codes), and remove the exception middleware once nothing throws for expected failures.
+
+To turn unexpected exceptions into errors, as `IRequestExceptionHandler` did, catch them in a behavior:
+
+```csharp
+public sealed class ExceptionBehavior<TMessage, TResult>(ILogger<ExceptionBehavior<TMessage, TResult>> logger)
+    : IPipelineBehavior<TMessage, TResult>
+{
+    public async ValueTask<Result<TResult>> Handle(
+        TMessage message,
+        MessageHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            return await next(message, ct);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogError(ex, "{MessageType} failed", typeof(TMessage).Name);
+            return Error.Internal("An unexpected error occurred.", ex);
+        }
+    }
+}
+```
+
+### Things that work differently
+
+- **Handlers are scoped by default.** MediatR registers handlers, `IMediator`, `ISender` and `IPublisher` as transient. Vitreous registers handlers as scoped, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope in background services and singletons, or see `DefaultHandlerLifetime` under [Installation](#installation).
+- **`ValueTask` is awaited once.** Await the result of `Send`, `Publish` and `CreateStream` directly. Don't await it twice or read `.Result` before it completes. Call `.AsTask()` if you need a `Task`, for example for `Task.WhenAll`.
+- **Handler problems are build errors.** A command or query without a handler raises `VIT001` (warning), and one with two handlers raises `VIT002` (error). MediatR reports a missing handler only when the request is sent, and picks one of two handlers without a warning. See [Diagnostics](#diagnostics).
+- **Handlers can't be generic.** Vitreous registers only non-generic handler classes, so MediatR's open-generic handlers (`RegisterGenericHandlers`) have no equivalent. Write one handler per message, or move the shared logic into a behavior.
+- **Generated types are `internal`.** Each project that installs `Vitreous.SourceGeneration` gets its own `AddVitreousHandlers()` and dispatcher, so a test project can run the generator without clashing with the app it tests.
+
+---
+
+## 6. Troubleshooting
 
 **`No handler registered for command 'X'` at runtime**
 The dispatcher could not find a handler. Check that:
