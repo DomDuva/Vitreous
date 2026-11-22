@@ -33,7 +33,7 @@ The generator automatically scans both the current project's source files **and*
 ```
 MyApp.Api              ← install Vitreous.SourceGeneration here only
   ├── ref MyApp.Application    (commands, queries, handlers)
-  └── ref MyApp.Infrastructure (repository handlers, integrations)
+  └── ref MyApp.Infrastructure (DbContext, integration handlers)
 ```
 
 Application and infrastructure projects — core package only:

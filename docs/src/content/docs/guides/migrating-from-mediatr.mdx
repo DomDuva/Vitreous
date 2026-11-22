@@ -95,12 +95,13 @@ public sealed record CreateOrderCommand(string CustomerName, string Product, int
     }
 }
 
-public sealed class CreateOrderHandler(OrderRepository repo) : IRequestHandler<CreateOrderCommand, Guid>
+public sealed class CreateOrderHandler(AppDbContext db) : IRequestHandler<CreateOrderCommand, Guid>
 {
     public async Task<Guid> Handle(CreateOrderCommand command, CancellationToken ct)
     {
         var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
-        await repo.AddAsync(order, ct);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
         return order.Id;
     }
 }
@@ -152,12 +153,13 @@ public sealed record CreateOrderCommand(string CustomerName, string Product, int
     public IReadOnlyDictionary<string, string[]> Validate() { /* as before */ }
 }
 
-public sealed class CreateOrderHandler(OrderRepository repo) : ICommandHandler<CreateOrderCommand, Guid>
+public sealed class CreateOrderHandler(AppDbContext db) : ICommandHandler<CreateOrderCommand, Guid>
 {
     public async ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
     {
         var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity);
-        await repo.AddAsync(order, ct);
+        db.Orders.Add(order);
+        await db.SaveChangesAsync(ct);
         return order.Id;
     }
 }

@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Microsoft.EntityFrameworkCore;
 using Vitreous.Abstractions;
 using Vitreous.Caching.Abstractions;
 
@@ -36,55 +37,58 @@ public sealed record ListOrdersQuery : ICacheableQuery<IReadOnlyList<OrderDto>>
 
 public sealed class GetOrderQueryHandler : IQueryHandler<GetOrderQuery, OrderDto>
 {
-    private readonly OrderRepository _repo;
+    private readonly OrdersDbContext _db;
     private readonly ILogger<GetOrderQueryHandler> _logger;
 
-    public GetOrderQueryHandler(OrderRepository repo, ILogger<GetOrderQueryHandler> logger)
+    public GetOrderQueryHandler(OrdersDbContext db, ILogger<GetOrderQueryHandler> logger)
     {
-        _repo = repo;
+        _db = db;
         _logger = logger;
     }
 
-    public ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
+    public async ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
     {
-        var order = _repo.Find(query.OrderId);
+        var order = await _db.Orders
+            .AsNoTracking()
+            .Where(o => o.Id == query.OrderId)
+            .Select(o => new OrderDto(o.Id, o.CustomerName, o.Product, o.Quantity, o.CreatedAt))
+            .FirstOrDefaultAsync(ct);
 
         if (order is null)
         {
             _logger.LogWarning("Order {OrderId} not found.", query.OrderId);
-            return ValueTask.FromResult(
-                Result<OrderDto>.Fail(Error.NotFound($"Order '{query.OrderId}' not found.")));
+            return Error.NotFound($"Order '{query.OrderId}' not found.");
         }
 
         _logger.LogInformation("Fetched order {OrderId}.", order.Id);
-        return ValueTask.FromResult(
-            Result<OrderDto>.Ok(new OrderDto(order.Id, order.CustomerName, order.Product, order.Quantity, order.CreatedAt)));
+        return order;
     }
 }
 
 public sealed class ListOrdersQueryHandler : IQueryHandler<ListOrdersQuery, IReadOnlyList<OrderDto>>
 {
-    private readonly OrderRepository _repo;
+    private readonly OrdersDbContext _db;
     private readonly ILogger<ListOrdersQueryHandler> _logger;
 
-    public ListOrdersQueryHandler(OrderRepository repo, ILogger<ListOrdersQueryHandler> logger)
+    public ListOrdersQueryHandler(OrdersDbContext db, ILogger<ListOrdersQueryHandler> logger)
     {
-        _repo = repo;
+        _db = db;
         _logger = logger;
     }
 
-    public ValueTask<Result<IReadOnlyList<OrderDto>>> Handle(
+    public async ValueTask<Result<IReadOnlyList<OrderDto>>> Handle(
         ListOrdersQuery query,
         CancellationToken ct = default)
     {
-        var orders = _repo.GetAll()
+        var orders = await _db.Orders
+            .AsNoTracking()
+            .OrderByDescending(o => o.CreatedAt)
             .Select(o => new OrderDto(o.Id, o.CustomerName, o.Product, o.Quantity, o.CreatedAt))
-            .ToList();
+            .ToListAsync(ct);
 
         _logger.LogInformation("Listed {Count} orders.", orders.Count);
 
-        return ValueTask.FromResult(
-            Result<IReadOnlyList<OrderDto>>.Ok(orders));
+        return orders;
     }
 }
 
@@ -93,7 +97,7 @@ public sealed class ListOrdersQueryHandler : IQueryHandler<ListOrdersQuery, IRea
 /// <summary>
 /// Emits a fixed number of fake <see cref="OrderDto"/> objects at a rate of one
 /// per second, then stops.  Useful for observing the Vitreous DevUI stream row
-/// update in real time without needing any data in the repository.
+/// update in real time without needing any orders in the database.
 /// </summary>
 /// <param name="Count">
 /// Number of items to emit.  Defaults to 5; clamped to [1, 20].

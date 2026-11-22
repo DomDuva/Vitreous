@@ -1,6 +1,7 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Vitreous.Abstractions;
-using Vitreous.Sample.DDD.Domain.Orders;
+using Vitreous.Sample.DDD.Application.Abstractions;
 
 namespace Vitreous.Sample.DDD.Application.Orders.Commands;
 
@@ -12,20 +13,24 @@ public sealed record DeleteOrderCommand(Guid OrderId) : ICommand;
 
 public sealed class DeleteOrderCommandHandler : ICommandHandler<DeleteOrderCommand>
 {
-    private readonly IOrderRepository _repo;
+    private readonly IAppDbContext _db;
     private readonly ILogger<DeleteOrderCommandHandler> _logger;
 
     public DeleteOrderCommandHandler(
-        IOrderRepository repo,
+        IAppDbContext db,
         ILogger<DeleteOrderCommandHandler> logger)
     {
-        _repo   = repo;
+        _db     = db;
         _logger = logger;
     }
 
     public async ValueTask<Result> Handle(DeleteOrderCommand command, CancellationToken ct = default)
     {
-        if (!await _repo.RemoveAsync(command.OrderId, ct))
+        var deleted = await _db.Orders
+            .Where(o => o.Id == command.OrderId)
+            .ExecuteDeleteAsync(ct);
+
+        if (deleted == 0)
         {
             _logger.LogWarning("Attempted to delete non-existent order {OrderId}", command.OrderId);
             return Result.Fail(Error.NotFound($"Order '{command.OrderId}' not found."));

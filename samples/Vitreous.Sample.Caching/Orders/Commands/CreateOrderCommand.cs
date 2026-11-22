@@ -22,28 +22,26 @@ public sealed record CreateOrderCommand(
 public sealed class CreateOrderCommandHandler
     : ICommandHandler<CreateOrderCommand, Guid>
 {
-    private readonly OrderRepository _repo;
+    private readonly OrdersDbContext _db;
     private readonly ILogger<CreateOrderCommandHandler> _logger;
 
     public CreateOrderCommandHandler(
-        OrderRepository repo,
+        OrdersDbContext db,
         ILogger<CreateOrderCommandHandler> logger)
     {
-        _repo = repo;
+        _db = db;
         _logger = logger;
     }
 
-    public ValueTask<Result<Guid>> Handle(
+    public async ValueTask<Result<Guid>> Handle(
         CreateOrderCommand command,
         CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(command.CustomerName))
-            return ValueTask.FromResult(
-                Result<Guid>.Fail(Error.Validation("CustomerName is required.")));
+            return Error.Validation("CustomerName is required.");
 
         if (command.Quantity <= 0)
-            return ValueTask.FromResult(
-                Result<Guid>.Fail(Error.Validation("Quantity must be greater than zero.")));
+            return Error.Validation("Quantity must be greater than zero.");
 
         var order = new Order(
             Guid.NewGuid(),
@@ -52,12 +50,13 @@ public sealed class CreateOrderCommandHandler
             command.Quantity,
             DateTimeOffset.UtcNow);
 
-        _repo.Add(order);
+        _db.Orders.Add(order);
+        await _db.SaveChangesAsync(ct);
 
         _logger.LogInformation(
             "Order {OrderId} created for customer '{Customer}' — {Qty}x {Product}",
             order.Id, order.CustomerName, order.Quantity, order.Product);
 
-        return ValueTask.FromResult(Result<Guid>.Ok(order.Id));
+        return order.Id;
     }
 }

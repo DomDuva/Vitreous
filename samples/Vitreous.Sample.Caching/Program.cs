@@ -19,8 +19,8 @@ builder.Services.AddVitreousHandlers();
 // Register the logging pipeline behavior (wraps every command & query)
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
 
-// Sample infrastructure
-builder.Services.AddSingleton<OrderRepository>();
+// Orders are stored with EF Core, on a SQLite in-memory database
+builder.Services.AddOrdersDatabase();
 
 // In-memory distributed cache — single node, no external dependencies required.
 // Swap this for services.AddStackExchangeRedisCache(...) to use a real Redis instance,
@@ -38,6 +38,8 @@ if (builder.Environment.IsDevelopment())
 // ── Build ─────────────────────────────────────────────────────────────────────
 
 var app = builder.Build();
+
+app.Services.EnsureOrdersDatabaseCreated();
 
 // Scalar API reference — only in Development
 if (app.Environment.IsDevelopment())

@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Changed
+
+- The samples no longer use repositories: handlers use EF Core directly, since a `DbContext` already is a unit of work and each `DbSet` a repository. `Vitreous.Sample`, `Vitreous.Sample.Caching` and `Vitreous.Sample.Redis` store orders through an `OrdersDbContext` on a SQLite in-memory database. In `Vitreous.Sample.DDD`, Application's handlers use an `IAppDbContext` that Infrastructure's `AppDbContext` implements, and `AppDbContext.SaveChangesAsync` publishes the saved entities' domain events (`IHasDomainEvents`), replacing `IOrderRepository` and `InMemoryOrderRepository`. `Vitreous.Sample.Aot` is unchanged.
+- The README and docs examples use a `DbContext` instead of a repository, and the tutorial stores its orders with EF Core and SQLite.
+
 ## [0.5.1] - 2026-11-22
 
 ### Fixed

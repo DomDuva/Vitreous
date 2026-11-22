@@ -1,6 +1,6 @@
 ---
 title: Clean Architecture and DDD
-description: A walkthrough of the layered sample, with a Domain layer holding the Order aggregate, its invariants, domain events and repository port, plus Application, Infrastructure and host layers.
+description: A walkthrough of the layered sample, with a Domain layer holding the Order aggregate, its invariants and domain events, Application handlers that use EF Core directly, and Infrastructure and host layers.
 sidebar:
   order: 8
 ---
@@ -13,12 +13,14 @@ Vitreous works the same in a solution split into layers as in a single project. 
 
 <FileTree>
 - samples/
-  - Vitreous.Sample.DDD.Domain/ the model: aggregate, invariants, domain events, ports
+  - Vitreous.Sample.DDD.Domain/ the model: aggregate, invariants, domain events
+    - IHasDomainEvents.cs
     - Orders/
       - Order.cs
       - OrderCreated.cs
-      - IOrderRepository.cs
   - Vitreous.Sample.DDD.Application/ use cases: messages, handlers, validators
+    - Abstractions/
+      - IAppDbContext.cs
     - Orders/
       - Commands/
         - CreateOrderCommand.cs
@@ -27,11 +29,11 @@ Vitreous works the same in a solution split into layers as in a single project. 
         - OrderQueries.cs
       - Notifications/
         - LogOrderCreatedHandler.cs
-  - Vitreous.Sample.DDD.Infrastructure/ implementations: persistence, email
+  - Vitreous.Sample.DDD.Infrastructure/ implementations: EF Core, email
     - DependencyInjection.cs
+    - Persistence/
+      - AppDbContext.cs
     - Orders/
-      - Persistence/
-        - InMemoryOrderRepository.cs
       - Notifications/
         - SendConfirmationEmailHandler.cs
   - Vitreous.Sample.DDD/ the host: endpoints, DI, cross-cutting behaviors
@@ -42,9 +44,9 @@ Vitreous works the same in a solution split into layers as in a single project. 
 
 | Project | Contains | References |
 |---|---|---|
-| `Vitreous.Sample.DDD.Domain` | The `Order` aggregate and its invariants, the `OrderCreated` domain event, the `IOrderRepository` port | `Vitreous` only |
-| `Vitreous.Sample.DDD.Application` | Commands, queries and their handlers, FluentValidation validators, a domain event handler | Domain, `Vitreous`, `FluentValidation` |
-| `Vitreous.Sample.DDD.Infrastructure` | `InMemoryOrderRepository`, which implements the port and publishes domain events; the confirmation email handler | Application (and Domain through it) |
+| `Vitreous.Sample.DDD.Domain` | The `Order` aggregate and its invariants, the `OrderCreated` domain event | `Vitreous` only |
+| `Vitreous.Sample.DDD.Application` | Commands, queries and their handlers, FluentValidation validators, a domain event handler, the `IAppDbContext` the handlers use | Domain, `Vitreous`, `FluentValidation`, `Microsoft.EntityFrameworkCore` |
+| `Vitreous.Sample.DDD.Infrastructure` | `AppDbContext`, which implements `IAppDbContext` with EF Core and publishes domain events after saving; the confirmation email handler | Application (and Domain through it), `Microsoft.EntityFrameworkCore.Sqlite` |
 | `Vitreous.Sample.DDD` (host) | `Program.cs`, the endpoints, the logging behavior, DI registration | All three, plus `Vitreous.SourceGeneration`, `Vitreous.DevUI`, `Vitreous.FluentValidation` |
 
 ## The dependency rule
@@ -59,11 +61,11 @@ Vitreous.Sample.DDD (host)
                     └── Vitreous (abstractions only)
 ```
 
-The domain depends on nothing but `Vitreous`. It declares what it needs from the outside, such as somewhere to keep orders, as an interface, and an outer layer implements it. Vitreous fits this rule because messages, handlers and events are plain types that implement interfaces from the core package. Nothing in the inner layers registers itself, scans assemblies or knows about the host.
+The domain depends on nothing but `Vitreous`, not even EF Core. Application declares the data its handlers need as `IAppDbContext`, and Infrastructure implements it. Vitreous fits this rule because messages, handlers and events are plain types that implement interfaces from the core package. Nothing in the inner layers registers itself, scans assemblies or knows about the host.
 
 ## The Domain layer
 
-The domain references `Vitreous` for its abstractions only: invariants return a `Result` or an `Error`, and domain events implement `INotification`. It has no handlers, no DI registration and no Vitreous behaviors.
+The domain references `Vitreous` for its abstractions only: invariants return a `Result` or an `Error`, and domain events implement `INotification`. It has no handlers, no DI registration, no Vitreous behaviors and no EF Core.
 
 ### The aggregate guards its invariants
 
@@ -113,26 +115,20 @@ public sealed record OrderCreated(Guid OrderId, string CustomerName, string Prod
 
 The aggregate only records the event. It doesn't publish it, because it has no `IPublisher` and the order isn't saved yet.
 
-### Ports
+### Recording events
 
-[`IOrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Domain/Orders/IOrderRepository.cs) is the persistence port. The domain owns the interface, and Infrastructure implements it:
+`Order` implements [`IHasDomainEvents`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Domain/IHasDomainEvents.cs), a one-method interface the domain declares, so Infrastructure can collect the events of any entity it saves without knowing its type:
 
 ```csharp
-public interface IOrderRepository
+public interface IHasDomainEvents
 {
-    ValueTask<Order?> FindAsync(Guid id, CancellationToken ct = default);
-    ValueTask<IReadOnlyList<Order>> ListAsync(CancellationToken ct = default);
-
-    /// <summary>Saves the order, then publishes the domain events it recorded.</summary>
-    ValueTask AddAsync(Order order, CancellationToken ct = default);
-
-    ValueTask<bool> RemoveAsync(Guid id, CancellationToken ct = default);
+    IReadOnlyList<INotification> DequeueDomainEvents(); // returns the events and clears them
 }
 ```
 
 ## The Application layer
 
-Each use case is a message and its handler, side by side in one file. [`CreateOrderCommand.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Commands/CreateOrderCommand.cs) holds the command, its validator and its handler. The handler coordinates: it asks the domain for an order and hands it to the repository. It holds no business rules itself.
+Each use case is a message and its handler, side by side in one file. [`CreateOrderCommand.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Commands/CreateOrderCommand.cs) holds the command, its validator and its handler. The handler coordinates: it asks the domain for an order and adds it to the database. It holds no business rules itself.
 
 ```csharp
 public sealed record CreateOrderCommand(string CustomerName, string Product, int Quantity) : ICommand<Guid>;
@@ -149,7 +145,7 @@ public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderC
 
 public sealed class CreateOrderCommandHandler : ICommandHandler<CreateOrderCommand, Guid>
 {
-    // IOrderRepository and ILogger are injected through the constructor.
+    // IAppDbContext and ILogger are injected through the constructor.
 
     public async ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
     {
@@ -157,11 +153,40 @@ public sealed class CreateOrderCommandHandler : ICommandHandler<CreateOrderComma
         if (created.IsFailure)
             return created.Error;
 
-        await _repo.AddAsync(created.Value, ct); // saves, then publishes OrderCreated
+        _db.Orders.Add(created.Value);
+        await _db.SaveChangesAsync(ct); // saves, then publishes OrderCreated
         return created.Value.Id;
     }
 }
 ```
+
+### Data access without repositories
+
+The handlers use EF Core directly. A `DbContext` already is a unit of work, and each `DbSet` a repository, so the sample adds no repository layer on top. Queries project straight to DTOs, and a delete is one statement:
+
+```csharp
+var order = await _db.Orders
+    .AsNoTracking()
+    .Where(o => o.Id == query.OrderId)
+    .Select(o => new OrderDto(o.Id, o.CustomerName, o.Product, o.Quantity, o.CreatedAt))
+    .FirstOrDefaultAsync(ct);
+
+var deleted = await _db.Orders.Where(o => o.Id == command.OrderId).ExecuteDeleteAsync(ct);
+```
+
+To keep Application independent of Infrastructure and of the database provider, the handlers depend on [`IAppDbContext`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Abstractions/IAppDbContext.cs), which Application declares, rather than on the concrete context:
+
+```csharp
+public interface IAppDbContext
+{
+    DbSet<Order> Orders { get; }
+
+    /// <summary>Saves the changes, then publishes the domain events of the saved entities.</summary>
+    Task<int> SaveChangesAsync(CancellationToken ct = default);
+}
+```
+
+Application references the `Microsoft.EntityFrameworkCore` package for `DbSet` and the query operators, but no provider.
 
 ### Validators and invariants
 
@@ -181,30 +206,41 @@ builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
 
 ## The Infrastructure layer
 
-[`InMemoryOrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Orders/Persistence/InMemoryOrderRepository.cs) implements the port. A dictionary stands in for the database. After it saves an order, it dequeues the order's domain events and publishes them through `IPublisher`, so handlers never see an order that wasn't saved:
+[`AppDbContext.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Persistence/AppDbContext.cs) implements `IAppDbContext`. It maps `Order` without the domain knowing about EF: the aggregate's private constructor and get-only properties are mapped in `OnModelCreating`, and EF binds the constructor's parameters by name.
+
+It also publishes domain events. `SaveChangesAsync` takes the events of every tracked `IHasDomainEvents` entity before saving, and publishes them through `IPublisher` only once the save has succeeded, so a handler never sees an order that wasn't stored:
 
 ```csharp
-public async ValueTask AddAsync(Order order, CancellationToken ct = default)
+public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken ct = default)
 {
-    _store.Orders[order.Id] = order;
+    var domainEvents = ChangeTracker.Entries<IHasDomainEvents>()
+        .SelectMany(e => e.Entity.DequeueDomainEvents())
+        .ToList();
 
-    foreach (var domainEvent in order.DequeueDomainEvents())
-        await _publisher.Publish(domainEvent, ct);
+    var saved = await base.SaveChangesAsync(acceptAllChangesOnSuccess, ct);
+
+    foreach (var domainEvent in domainEvents)
+        await publisher.Publish(domainEvent, ct);
+
+    return saved;
 }
 ```
 
 Each event is typed `INotification` here. `Publish` dispatches on its runtime type, so an `OrderCreated` reaches the `OrderCreated` handlers. See [Which handlers a notification reaches](/Vitreous/concepts/dispatching/#which-handlers-a-notification-reaches).
 
-The repository is scoped, because `IPublisher` is scoped, while the dictionary it writes to is a singleton. [`DependencyInjection.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/DependencyInjection.cs) registers both, so the host doesn't need to know about either:
+[`DependencyInjection.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/DependencyInjection.cs) registers the context, on a SQLite in-memory database so the sample needs no server or file, and maps `IAppDbContext` to it. The host only calls `AddInfrastructure()`:
 
 ```csharp
 public static IServiceCollection AddInfrastructure(this IServiceCollection services)
 {
-    services.AddSingleton<InMemoryOrderStore>();
-    services.AddScoped<IOrderRepository, InMemoryOrderRepository>();
+    // ... open the connection that keeps the in-memory database alive ...
+    services.AddDbContext<AppDbContext>(o => o.UseSqlite(connectionString));
+    services.AddScoped<IAppDbContext>(sp => sp.GetRequiredService<AppDbContext>());
     return services;
 }
 ```
+
+`AppDbContext` is scoped, like the handlers and `IPublisher`, so each request gets its own. In a real app, swap `UseSqlite` for your provider and create the schema with migrations instead of `EnsureCreated`.
 
 Infrastructure also handles `OrderCreated`, in [`SendConfirmationEmailHandler.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Orders/Notifications/SendConfirmationEmailHandler.cs), next to [`LogOrderCreatedHandler`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Notifications/LogOrderCreatedHandler.cs) in Application. Neither is registered by hand: the generator finds both. Handlers run one after another by default; set `NotificationPublishStrategy.Parallel` to run them concurrently. See [Notifications](/Vitreous/concepts/messages/#notifications).
 
@@ -239,6 +275,9 @@ builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime
 builder.Services.AddVitreousValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
 builder.Services.AddInfrastructure();
+
+var app = builder.Build();
+app.Services.EnsureDatabaseCreated();
 ```
 
 A command in Application with no handler anywhere in the solution is a `VIT001` warning when the host builds, and two handlers for it are a `VIT002` error. See [Diagnostics](/Vitreous/reference/diagnostics/).
@@ -269,7 +308,7 @@ app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, Cancellati
 dotnet run --project samples/Vitreous.Sample.DDD
 ```
 
-The API listens on `http://localhost:5096`. In Development it also serves the Scalar API reference at `/scalar/v1` and the [Developer UI](/Vitreous/guides/developer-ui/) at `/vitreous`.
+The API listens on `http://localhost:5096`, with its orders in a SQLite in-memory database that starts empty on every run. In Development it also serves the Scalar API reference at `/scalar/v1` and the [Developer UI](/Vitreous/guides/developer-ui/) at `/vitreous`.
 
 ```sh
 curl -X POST http://localhost:5096/orders -H 'Content-Type: application/json' \

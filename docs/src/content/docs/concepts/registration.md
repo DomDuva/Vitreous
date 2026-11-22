@@ -22,7 +22,7 @@ builder.Services.AddVitreousHandlers();
 ```csharp
 builder.Services.AddVitreousHandlers(
     typeof(CreateOrderHandler).Assembly,
-    typeof(SqlOrderRepository).Assembly
+    typeof(SendConfirmationEmailHandler).Assembly
 );
 ```
 
