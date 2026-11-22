@@ -38,5 +38,7 @@ Vitreous.Caching.VitreousCachingOptions.KeyPrefix.get -> string!
 Vitreous.Caching.VitreousCachingOptions.KeyPrefix.set -> void
 Vitreous.Caching.VitreousCachingOptions.VitreousCachingOptions() -> void
 Vitreous.Caching.VitreousCachingServiceCollectionExtensions
+Vitreous.Caching.VitreousCachingTelemetry
+const Vitreous.Caching.VitreousCachingTelemetry.MeterName = "Vitreous.Caching" -> string!
 static Vitreous.Caching.CacheKeys.Combine(string? prefix, string! key) -> string!
 static Vitreous.Caching.VitreousCachingServiceCollectionExtensions.AddVitreousCaching(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.Caching.VitreousCachingOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

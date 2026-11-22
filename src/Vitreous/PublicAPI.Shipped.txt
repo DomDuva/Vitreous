@@ -46,6 +46,10 @@ Vitreous.Error.Extensions.get -> System.Collections.Generic.IReadOnlyDictionary<
 Vitreous.Error.Extensions.init -> void
 Vitreous.Error.Message.get -> string!
 Vitreous.Error.Message.init -> void
+Vitreous.Internal.DispatchTelemetry
+Vitreous.Internal.GeneratedBehaviors
+Vitreous.Internal.GeneratedBehaviors.Add(System.Type! serviceType, System.Type! implementationType, System.Func<Microsoft.Extensions.DependencyInjection.ServiceLifetime, Microsoft.Extensions.DependencyInjection.ServiceDescriptor![]!>! close) -> Vitreous.Internal.GeneratedBehaviors!
+Vitreous.Internal.GeneratedBehaviors.GeneratedBehaviors() -> void
 Vitreous.Internal.ParallelPublisher
 Vitreous.Internal.ParallelPublisher.ParallelPublisher(System.IServiceProvider! services) -> void
 Vitreous.Internal.ParallelPublisher.Publish<TNotification>(TNotification notification, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask
@@ -95,7 +99,10 @@ Vitreous.VitreousOptions.NotificationPublishStrategy.get -> Vitreous.Notificatio
 Vitreous.VitreousOptions.NotificationPublishStrategy.set -> void
 Vitreous.VitreousOptions.VitreousOptions() -> void
 Vitreous.VitreousServiceCollectionExtensions
+Vitreous.VitreousTelemetry
 abstract Vitreous.Abstractions.StreamQueryHandler<TQuery, TResult>.Stream(TQuery query, System.Threading.CancellationToken ct) -> System.Collections.Generic.IAsyncEnumerable<TResult>!
+const Vitreous.VitreousTelemetry.ActivitySourceName = "Vitreous" -> string!
+const Vitreous.VitreousTelemetry.MeterName = "Vitreous" -> string!
 override Vitreous.Error.Equals(object? obj) -> bool
 override Vitreous.Error.GetHashCode() -> int
 override Vitreous.Error.ToString() -> string!
@@ -115,6 +122,11 @@ static Vitreous.Error.Uninitialized.get -> Vitreous.Error!
 static Vitreous.Error.Validation(string! message, System.Collections.Generic.IReadOnlyDictionary<string!, string![]!>? failures = null, string? code = null) -> Vitreous.Error!
 static Vitreous.Error.operator !=(Vitreous.Error? left, Vitreous.Error? right) -> bool
 static Vitreous.Error.operator ==(Vitreous.Error? left, Vitreous.Error? right) -> bool
+static Vitreous.Internal.DispatchTelemetry.CreateStream<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.IStreamQuery<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.IStreamQuery<TResult>! query, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
+static Vitreous.Internal.DispatchTelemetry.IsEnabled.get -> bool
+static Vitreous.Internal.DispatchTelemetry.SendCommand(System.Func<System.IServiceProvider!, Vitreous.Abstractions.ICommand!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.ICommand! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
+static Vitreous.Internal.DispatchTelemetry.SendCommand<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.ICommand<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.ICommand<TResult>! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
+static Vitreous.Internal.DispatchTelemetry.SendQuery<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.IQuery<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.IQuery<TResult>! query, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
 static Vitreous.Internal.PipelineExecutor.Execute<TMessage, TResult>(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.IPipelineBehavior<TMessage, TResult>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
 static Vitreous.Internal.PipelineExecutor.ExecuteNotification<TNotification>(TNotification notification, Vitreous.Abstractions.NotificationHandlerDelegate<TNotification>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.INotificationPipelineBehavior<TNotification>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask
 static Vitreous.Internal.PipelineExecutor.ExecuteStream<TMessage, TResult>(TMessage message, Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>! terminal, System.Collections.Generic.IEnumerable<Vitreous.Abstractions.IStreamPipelineBehavior<TMessage, TResult>!>! behaviors, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
@@ -137,6 +149,9 @@ static Vitreous.VitreousContext.Current.get -> Vitreous.PipelineAnnotations?
 static Vitreous.VitreousContext.Current.set -> void
 static Vitreous.VitreousServiceCollectionExtensions.AddVitreous(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.VitreousOptions!>? configure = null) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Vitreous.VitreousServiceCollectionExtensions.AddVitreous(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousBehavior(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Type! behaviorType, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Transient) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGenerated(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGeneratedBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.Internal.GeneratedBehaviors! behaviors) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Vitreous.VitreousServiceCollectionExtensions.AddVitreousHandlers(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Action<Vitreous.VitreousOptions!>? configure, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static Vitreous.VitreousServiceCollectionExtensions.AddVitreousHandlers(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, params System.Reflection.Assembly![]! assemblies) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
 static readonly Vitreous.Result.Success -> Vitreous.Result
