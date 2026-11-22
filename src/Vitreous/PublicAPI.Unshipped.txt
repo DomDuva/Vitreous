@@ -1,16 +1,1 @@
 #nullable enable
-const Vitreous.VitreousTelemetry.ActivitySourceName = "Vitreous" -> string!
-const Vitreous.VitreousTelemetry.MeterName = "Vitreous" -> string!
-static Vitreous.Internal.DispatchTelemetry.CreateStream<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.IStreamQuery<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.IStreamQuery<TResult>! query, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
-static Vitreous.Internal.DispatchTelemetry.IsEnabled.get -> bool
-static Vitreous.Internal.DispatchTelemetry.SendCommand(System.Func<System.IServiceProvider!, Vitreous.Abstractions.ICommand!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.ICommand! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result>
-static Vitreous.Internal.DispatchTelemetry.SendCommand<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.ICommand<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.ICommand<TResult>! command, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
-static Vitreous.Internal.DispatchTelemetry.SendQuery<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.IQuery<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.IQuery<TResult>! query, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
-Vitreous.Internal.DispatchTelemetry
-Vitreous.VitreousTelemetry
-static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGenerated(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static Vitreous.VitreousServiceCollectionExtensions.AddVitreousBehavior(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Type! behaviorType, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Transient) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGeneratedBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.Internal.GeneratedBehaviors! behaviors) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-Vitreous.Internal.GeneratedBehaviors
-Vitreous.Internal.GeneratedBehaviors.Add(System.Type! serviceType, System.Type! implementationType, System.Func<Microsoft.Extensions.DependencyInjection.ServiceLifetime, Microsoft.Extensions.DependencyInjection.ServiceDescriptor![]!>! close) -> Vitreous.Internal.GeneratedBehaviors!
-Vitreous.Internal.GeneratedBehaviors.GeneratedBehaviors() -> void
