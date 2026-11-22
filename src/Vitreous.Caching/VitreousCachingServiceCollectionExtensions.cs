@@ -40,13 +40,10 @@ public static class VitreousCachingServiceCollectionExtensions
 
         // CachingBehavior must be innermost (registered last) so it short-circuits
         // the handler only — outer behaviors (tracing, logging) still run on cache hits.
-        services.TryAddEnumerable(ServiceDescriptor.Singleton(
-            typeof(IPipelineBehavior<,>),
-            typeof(CacheInvalidationBehavior<,>)));
-
-        services.TryAddEnumerable(ServiceDescriptor.Singleton(
-            typeof(IPipelineBehavior<,>),
-            typeof(CachingBehavior<,>)));
+        // AddVitreousBehavior closes them over every message when the source generator is used,
+        // so they work under Native AOT for value-type messages and results.
+        services.AddVitreousBehavior(typeof(CacheInvalidationBehavior<,>), ServiceLifetime.Singleton);
+        services.AddVitreousBehavior(typeof(CachingBehavior<,>), ServiceLifetime.Singleton);
 
         return services;
     }
