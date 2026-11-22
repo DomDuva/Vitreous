@@ -6,6 +6,7 @@
   </Folder>
   <Folder Name="/samples/">
     <Project Path="samples/Vitreous.Sample/Vitreous.Sample.csproj" />
+    <Project Path="samples/Vitreous.Sample.Aot/Vitreous.Sample.Aot.csproj" />
     <Project Path="samples/Vitreous.Sample.Caching/Vitreous.Sample.Caching.csproj" />
     <Project Path="samples/Vitreous.Sample.Redis/Vitreous.Sample.Redis.csproj" />
     <Project Path="samples/Vitreous.Sample.DDD/Vitreous.Sample.DDD.csproj" />

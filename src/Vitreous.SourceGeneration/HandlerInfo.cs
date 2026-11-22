@@ -87,8 +87,9 @@ internal sealed record ReferenceModel(
 [Flags]
 internal enum CoreFeatures
 {
-    None              = 0,
-    DispatchTelemetry = 1 << 0,   // Vitreous.Internal.DispatchTelemetry (0.4.0)
+    None                 = 0,
+    DispatchTelemetry    = 1 << 0,   // Vitreous.Internal.DispatchTelemetry (0.4.0)
+    AddVitreousGenerated = 1 << 1,   // VitreousServiceCollectionExtensions.AddVitreousGenerated (0.4.0)
 }
 
 /// <summary>

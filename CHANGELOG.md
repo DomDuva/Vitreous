@@ -14,6 +14,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - OpenTelemetry tracing and metrics in `Vitreous`, through `System.Diagnostics` with no new dependency. Subscribe to `VitreousTelemetry.ActivitySourceName` and `VitreousTelemetry.MeterName` (both `"Vitreous"`). Every command, query, stream and notification gets a span, and each notification handler gets a child span. A failed `Result` sets the span status to `Error`, with `Error.Code` recorded as `error.type`. Durations are recorded in the `vitreous.dispatch.duration` histogram. Nothing is recorded, and nothing extra is allocated, until a listener subscribes.
 - `Vitreous.Caching` counts cache hits, misses and coalesced loads (`vitreous.cache.requests`) and invalidations (`vitreous.cache.invalidations`) on the `VitreousCachingTelemetry.MeterName` meter (`"Vitreous.Caching"`).
 - The source generator routes dispatch through the new telemetry when the referenced `Vitreous` has it. With an older `Vitreous` it emits the previous dispatcher, so upgrading only the generator still compiles.
+- Native AOT and trimming support. `Vitreous`, `Vitreous.Caching` and `Vitreous.Caching.Redis` are marked `IsAotCompatible`. The generated `AddVitreousHandlers()` now calls the new `AddVitreousGenerated(options)`, which registers everything `AddVitreous(options)` does except the reflection-based sender. With an older `Vitreous` the generator still calls `AddVitreous(options)`.
+- `samples/Vitreous.Sample.Aot`, a Native AOT web API. CI publishes it on .NET 10 and .NET 11 and checks every endpoint.
+
+### Changed
+
+- `AddVitreous()`, `AddVitreousHandlers(params Assembly[])`, `AddVitreousDevUI()`, `UseVitreousDevUI()` and `MapVitreousDevUI()` are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. Their behavior is unchanged, but trimmed and AOT apps now get IL2026/IL3050 warnings for them.
+- `SystemTextJsonVitreousCacheSerializer` serializes through the `JsonTypeInfo` from the configured options, so a `JsonSerializerContext` set as the options' `TypeInfoResolver` is used without reflection. Options without a resolver still fall back to reflection, as before.
 
 ## [0.3.0] - 2026-11-20
 

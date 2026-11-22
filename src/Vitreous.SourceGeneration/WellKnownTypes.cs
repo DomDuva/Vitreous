@@ -31,6 +31,9 @@ internal sealed class WellKnownTypes
         // Optional core APIs. The generator may be newer than the referenced Vitreous, so
         // generated code only calls what this compilation actually has.
         DispatchTelemetry = compilation.GetTypeByMetadataName("Vitreous.Internal.DispatchTelemetry");
+        HasAddVitreousGenerated = compilation
+            .GetTypeByMetadataName("Vitreous.VitreousServiceCollectionExtensions")?
+            .GetMembers("AddVitreousGenerated").Length > 0;
     }
 
     // Handler interfaces
@@ -52,6 +55,9 @@ internal sealed class WellKnownTypes
 
     // Vitreous 0.4.0+: OpenTelemetry spans and metrics around generated dispatch
     public INamedTypeSymbol? DispatchTelemetry { get; }
+
+    // Vitreous 0.4.0+: core registration without the reflection-based sender (trimming/AOT)
+    public bool HasAddVitreousGenerated { get; }
 
     /// <summary>
     /// Returns the well-known types for <paramref name="compilation"/>, or <see langword="null"/>

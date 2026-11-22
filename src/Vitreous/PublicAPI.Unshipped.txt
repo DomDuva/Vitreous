@@ -8,3 +8,4 @@ static Vitreous.Internal.DispatchTelemetry.SendCommand<TResult>(System.Func<Syst
 static Vitreous.Internal.DispatchTelemetry.SendQuery<TResult>(System.Func<System.IServiceProvider!, Vitreous.Abstractions.IQuery<TResult>!, System.Threading.CancellationToken, System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>>! invoker, System.IServiceProvider! services, Vitreous.Abstractions.IQuery<TResult>! query, System.Threading.CancellationToken ct) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
 Vitreous.Internal.DispatchTelemetry
 Vitreous.VitreousTelemetry
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGenerated(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!

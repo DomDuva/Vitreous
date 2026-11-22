@@ -1,3 +1,4 @@
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Routing;
@@ -16,6 +17,10 @@ namespace Vitreous.DevUI.Extensions;
 /// </summary>
 public static class ApplicationBuilderExtensions
 {
+    private const string NotTrimmable =
+        "Vitreous.DevUI is a development tool that serializes arbitrary messages with reflection. " +
+        "Leave it out of trimmed and Native AOT builds.";
+
     /// <summary>
     /// Registers Vitreous DevUI services in the DI container.
     /// Call this in <c>builder.Services</c> before <c>builder.Build()</c>.
@@ -25,6 +30,8 @@ public static class ApplicationBuilderExtensions
     /// <see cref="UseVitreousDevUI"/> or <see cref="MapVitreousDevUI"/> activates the UI, which by
     /// default only happens in <c>Development</c> (see <see cref="VitreousDevUIOptions.Enabled"/>).
     /// </remarks>
+    [RequiresUnreferencedCode(NotTrimmable)]
+    [RequiresDynamicCode(NotTrimmable)]
     public static IServiceCollection AddVitreousDevUI(
         this IServiceCollection services,
         Action<VitreousDevUIOptions>? configure = null)
@@ -119,6 +126,8 @@ public static class ApplicationBuilderExtensions
     /// app.MapVitreousDevUI().RequireAuthorization("Admins");
     /// </code>
     /// </remarks>
+    [RequiresUnreferencedCode(NotTrimmable)]
+    [RequiresDynamicCode(NotTrimmable)]
     public static IApplicationBuilder UseVitreousDevUI(this IApplicationBuilder app)
     {
         if (!TryActivate(app.ApplicationServices))
@@ -137,6 +146,8 @@ public static class ApplicationBuilderExtensions
     /// The route group, so endpoint conventions apply to every DevUI endpoint, e.g.
     /// <c>app.MapVitreousDevUI().RequireAuthorization()</c>.
     /// </returns>
+    [RequiresUnreferencedCode(NotTrimmable)]
+    [RequiresDynamicCode(NotTrimmable)]
     public static RouteGroupBuilder MapVitreousDevUI(this IEndpointRouteBuilder endpoints, string? pathPrefix = null)
     {
         var services = endpoints.ServiceProvider;

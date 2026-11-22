@@ -125,6 +125,7 @@ Vitreous is **~150× faster** to start and allocates **~50× less** — because 
    - [Result type](#result-type)
    - [Error type](#error-type)
    - [Source generator](#source-generator)
+   - [Native AOT and trimming](#native-aot-and-trimming)
 2. [Developer UI](#2-developer-ui)
 3. [Caching](#3-caching)
    - [IDistributedCache backend](#idistributedcache-backend)
@@ -637,6 +638,35 @@ builder.Services.AddVitreousHandlers();
 
 ---
 
+### Native AOT and trimming
+
+`Vitreous`, `Vitreous.Caching` and `Vitreous.Caching.Redis` are trim- and AOT-compatible. Publish with `<PublishAot>true</PublishAot>` and register handlers with the generated `AddVitreousHandlers()`. It registers the generated dispatcher only, so nothing that dispatches with reflection is left in the app.
+
+The reflection-based APIs, `AddVitreous()` and `AddVitreousHandlers(params Assembly[])`, are marked `[RequiresUnreferencedCode]` and `[RequiresDynamicCode]`. Calling them in a trimmed or AOT app raises IL2026 and IL3050.
+
+**Caching.** Cached values are serialized with System.Text.Json, and reflection-based JSON is off in AOT apps. Give the caching options a `JsonSerializerContext` that lists every cached result type:
+
+```csharp
+builder.Services.AddVitreousCaching(o =>
+    o.JsonSerializerOptions = new JsonSerializerOptions(JsonSerializerDefaults.Web)
+    {
+        TypeInfoResolver = AppJsonContext.Default,
+    });
+
+[JsonSerializable(typeof(OrderDto))]
+internal sealed partial class AppJsonContext : JsonSerializerContext;
+```
+
+If a type is missing from the context, the cache read or write fails and is logged, and the handler runs as if the entry wasn't cached.
+
+**DevUI.** `Vitreous.DevUI` serializes arbitrary messages with reflection, so it isn't AOT-compatible. `AddVitreousDevUI()`, `UseVitreousDevUI()` and `MapVitreousDevUI()` raise IL2026 and IL3050. Leave the package out of AOT builds.
+
+**Open-generic behaviors and value types.** Under Native AOT, Microsoft.Extensions.DependencyInjection can't close an open-generic service over a value type. Once an open-generic `IPipelineBehavior<,>` is registered (`AddVitreousCaching()` and `AddVitreousRedisCaching()` register two), a dispatch fails if the message or its result is a value type. This covers void commands (`Unit` is a struct), results such as `int` or `Guid`, and `record struct` messages. It throws `InvalidOperationException: Unable to create a generic service for type ... because ... is a ValueType`. Closed behaviors such as `IPipelineBehavior<CreateOrder, OrderDto>` work with any type. In an AOT app with open-generic behaviors, use classes or records for messages and results, for example a record that wraps the `Guid`.
+
+`samples/Vitreous.Sample.Aot` covers commands, a cached query, cache invalidation, a notification with two handlers, a stream query and a closed behavior. CI publishes it with Native AOT on .NET 10 and .NET 11 and calls every endpoint. On a Linux x64 VM it produces one 10.7 MB executable that answers its first request about 100 ms after starting, compared with about 450 ms for the same app on the JIT. MediatR can't be published with Native AOT, so there is no comparison.
+
+---
+
 ### Registration methods
 
 Vitreous provides two ways to register handlers. They are **mutually exclusive** — choose one.
@@ -971,6 +1001,12 @@ Commands and queries must have exactly one handler. If you need fan-out, use a n
 
 **`Cannot resolve scoped service 'ISender' from root provider`**
 Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies.
+
+**IL2026 / IL3050 on `AddVitreousHandlers(...)` or `AddVitreous()`**
+The trim and AOT analyzers flag the reflection-based registration. Install `Vitreous.SourceGeneration` on the entry-point project and call `AddVitreousHandlers()` with no assemblies. See [Native AOT and trimming](#native-aot-and-trimming).
+
+**`Unable to create a generic service for type 'IPipelineBehavior...' because '...' is a ValueType`**
+In a Native AOT app, an open-generic behavior (for example from `AddVitreousCaching()`) was closed over a value type: a void command, an `int`/`Guid` result or a struct message. See [Native AOT and trimming](#native-aot-and-trimming).
 
 **Nothing shows in the DevUI**
 `UseVitreousDevUI()` must run in the environment you are testing (the samples gate it on `IsDevelopment()`), and `AddVitreousDevUI()` must be called before `builder.Build()`. Open `/vitreous` in a browser and trigger a request.

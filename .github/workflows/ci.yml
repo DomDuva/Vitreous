@@ -120,3 +120,57 @@ jobs:
 
       - name: Run
         run: dotnet bin/Release/${{ matrix.tfm }}/Vitreous.PackageSmokeTest.dll
+
+  # Publishes the AOT sample with Native AOT (any trim/AOT warning fails the build, since
+  # warnings are errors) and checks every endpoint of the native binary.
+  aot:
+    name: Native AOT (${{ matrix.tfm }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tfm: [net10.0, net11.0]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            10.x
+            11.x
+
+      - name: Publish
+        run: dotnet publish samples/Vitreous.Sample.Aot -c Release -f ${{ matrix.tfm }} -r linux-x64 -o out/aot
+
+      - name: Smoke test
+        run: |
+          ls -l out/aot/Vitreous.Sample.Aot
+          base=http://127.0.0.1:5080
+          ASPNETCORE_URLS=$base ./out/aot/Vitreous.Sample.Aot > sample.log 2>&1 &
+          for _ in $(seq 50); do curl -sf $base/health > /dev/null && break; sleep 0.1; done
+
+          check() { # name expected actual
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$2', got '$3'"; cat sample.log; exit 1
+            fi
+            echo "ok   $1"
+          }
+          json() { curl -s -H 'content-type: application/json' "$@"; }
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+          check "health" ok "$(curl -sf $base/health)"
+          todo=$(json -X POST $base/todos -d '{"title":"ship aot"}')
+          id=$(echo "$todo" | jq -r .id)
+          check "command" '"ship aot"' "$(echo "$todo" | jq .title)"
+          check "closed behavior" 400 "$(status -X POST $base/todos -H 'content-type: application/json' -d '{"title":" "}')"
+          check "cached query (miss)" false "$(curl -sf $base/todos/$id | jq .done)"
+          check "cached query (hit)" false "$(curl -sf $base/todos/$id | jq .done)"
+          check "handler ran once" 1 "$(curl -sf $base/stats | jq .getTodoCalls)"
+          check "invalidating command" true "$(curl -sf -X POST $base/todos/$id/complete | jq .done)"
+          check "invalidated" true "$(curl -sf $base/todos/$id | jq .done)"
+          check "failed result" 404 "$(status -X POST $base/todos/00000000-0000-0000-0000-000000000000/complete)"
+          check "notification handlers" 1 "$(curl -sf $base/stats | jq .createdNotifications)"
+          check "stream" '["ship aot"]' "$(curl -sf $base/todos | jq -c 'map(.title)')"
