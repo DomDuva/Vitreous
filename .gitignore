@@ -65,3 +65,8 @@ BenchmarkDotNet.Artifacts/
 
 # ── Tooling ───────────────────────────────────────────────────────────────────
 .playwright-mcp/
+
+# ── Docs site (docs/) ─────────────────────────────────────────────────────────
+docs/node_modules/
+docs/dist/
+docs/.astro/

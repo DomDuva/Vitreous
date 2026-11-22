@@ -1,0 +1,67 @@
+---
+title: Validation
+description: Run FluentValidation validators before the handler with Vitreous.FluentValidation.
+sidebar:
+  order: 1
+  badge:
+    text: 0.5.0+
+    variant: note
+---
+
+`Vitreous.FluentValidation` runs your [FluentValidation](https://docs.fluentvalidation.net) validators before the handler. A message that fails validation never reaches its handler: the dispatch returns `Error.Validation` with the failures grouped by property.
+
+```sh
+dotnet add package Vitreous.FluentValidation
+dotnet add package FluentValidation.DependencyInjectionExtensions
+```
+
+```csharp
+builder.Services.AddVitreousHandlers();
+builder.Services.AddVitreousValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommandValidator>(); // scoped by default
+```
+
+`AddVitreousValidation()` registers the behaviors only. Validators are ordinary FluentValidation validators, registered here by `FluentValidation.DependencyInjectionExtensions`:
+
+```csharp
+public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderCommandValidator()
+    {
+        RuleFor(c => c.CustomerName).NotEmpty();
+        RuleFor(c => c.Quantity).GreaterThan(0);
+    }
+}
+```
+
+The failures are in `Error.Extensions["failures"]`, an `IReadOnlyDictionary<string, string[]>`, ready for `Results.ValidationProblem`:
+
+```csharp
+app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
+    (await sender.Send(command, ct)).Match(
+        id    => Results.Created($"/orders/{id}", new { id }),
+        error => error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
+            ? Results.ValidationProblem(failures.ToDictionary()) // .NET 8 takes an IDictionary; .NET 9+ takes failures as is
+            : Results.Problem(error.Message)));
+```
+
+```json
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "CustomerName": ["'Customer Name' must not be empty."],
+    "Quantity": ["'Quantity' must be greater than '0'."]
+  }
+}
+```
+
+## How it behaves
+
+- **What is validated.** Commands (including void commands), queries and stream queries. A stream query is validated once, before the stream opens, and `CreateStream` returns the failure. Notifications are not validated.
+- **Every validator runs.** All validators registered for the message run one after another, and every failure is reported. Any failure fails the message, whatever its `Severity`, as with FluentValidation's `ValidationResult.IsValid`. The error has code `VALIDATION` and message `Validation failed.`, and the failures are keyed by FluentValidation's `PropertyName`, e.g. `Quantity` or `Lines[0].Sku`.
+- **Messages without a validator** pass straight through, without an extra async step.
+- **Lifetimes.** The behaviors are transient, so they take scoped validators (the `AddValidatorsFromAssembly*` default) from the request's scope. With `DefaultHandlerLifetime = Singleton` the pipeline is resolved from the root provider, so register the validators as singletons: `AddValidatorsFromAssemblyContaining<T>(ServiceLifetime.Singleton)`.
+- **Order.** Behaviors run outermost first. Call `AddVitreousValidation()` before `AddVitreousCaching()` or `AddVitreousRedisCaching()`, so an invalid query never reaches the cache. The DevUI's tracing behaviors are always outermost, so failed validations still appear in the dashboard.
+
+`Vitreous.FluentValidation` is not marked AOT-compatible, because FluentValidation itself is not annotated for trimming.

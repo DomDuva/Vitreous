@@ -1,0 +1,201 @@
+---
+title: Build your first feature
+description: A tutorial that builds an orders API with a command, a query, a pipeline behavior and the endpoints that dispatch them.
+sidebar:
+  order: 3
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+This tutorial builds a small orders API from an empty project: a command that creates an order, a query that reads it back, a pipeline behavior that logs every dispatch, and the endpoints that send them. The code is adapted from the sample in [`samples/Vitreous.Sample.DDD.Application`](https://github.com/DomDuva/Vitreous/tree/main/samples/Vitreous.Sample.DDD.Application) and [`samples/Vitreous.Sample.DDD`](https://github.com/DomDuva/Vitreous/tree/main/samples/Vitreous.Sample.DDD), squeezed into one project. The [Clean Architecture walkthrough](/Vitreous/guides/clean-architecture-ddd/) splits the same code into layers.
+
+You need the .NET 8 SDK or later.
+
+<Steps>
+
+1. **Create the project and install Vitreous.**
+
+   ```sh
+   dotnet new web -n Orders
+   cd Orders
+   dotnet add package Vitreous
+   dotnet add package Vitreous.SourceGeneration
+   ```
+
+   `Vitreous.SourceGeneration` runs at build time only. It generates `AddVitreousHandlers()` and the dispatcher, and adds nothing to your app at runtime.
+
+2. **Add an order and somewhere to keep it.** Create `Orders/Order.cs`. An in-memory repository stands in for a database, as in the sample's [`Order.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Order.cs) and [`OrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/OrderRepository.cs).
+
+   ```csharp
+   // Orders/Order.cs
+   using System.Collections.Concurrent;
+
+   namespace Orders;
+
+   public sealed record Order(Guid Id, string CustomerName, string Product, int Quantity, DateTimeOffset CreatedAt);
+
+   public sealed class OrderRepository
+   {
+       private readonly ConcurrentDictionary<Guid, Order> _orders = new();
+
+       public Order? Find(Guid id) => _orders.TryGetValue(id, out var o) ? o : null;
+
+       public void Add(Order order) => _orders[order.Id] = order;
+   }
+   ```
+
+3. **Write the command and its handler.** A command changes state and has exactly one handler. `ICommand<Guid>` says this one returns the new order's ID. Create `Orders/CreateOrder.cs` (from the sample's [`CreateOrderCommand.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Commands/CreateOrderCommand.cs)):
+
+   ```csharp
+   // Orders/CreateOrder.cs
+   using Vitreous;
+   using Vitreous.Abstractions;
+
+   namespace Orders;
+
+   public sealed record CreateOrderCommand(string CustomerName, string Product, int Quantity) : ICommand<Guid>;
+
+   public sealed class CreateOrderCommandHandler(OrderRepository repo) : ICommandHandler<CreateOrderCommand, Guid>
+   {
+       public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+       {
+           if (string.IsNullOrWhiteSpace(command.CustomerName))
+               return new(Error.Validation("CustomerName is required."));
+
+           var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity, DateTimeOffset.UtcNow);
+           repo.Add(order);
+
+           return new(order.Id); // Guid converts to Result<Guid> implicitly
+       }
+   }
+   ```
+
+   The handler returns an `Error` for an expected failure instead of throwing. The caller gets a `Result<Guid>` that is either the ID or the error, never both. See [Results and errors](/Vitreous/concepts/results-and-errors/).
+
+4. **Write the query and its handler.** A query only reads. Create `Orders/GetOrder.cs` (from the sample's [`OrderQueries.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Queries/OrderQueries.cs)):
+
+   ```csharp
+   // Orders/GetOrder.cs
+   using Vitreous;
+   using Vitreous.Abstractions;
+
+   namespace Orders;
+
+   public sealed record OrderDto(Guid Id, string CustomerName, string Product, int Quantity, DateTimeOffset CreatedAt);
+
+   public sealed record GetOrderQuery(Guid OrderId) : IQuery<OrderDto>;
+
+   public sealed class GetOrderQueryHandler(OrderRepository repo) : IQueryHandler<GetOrderQuery, OrderDto>
+   {
+       public ValueTask<Result<OrderDto>> Handle(GetOrderQuery query, CancellationToken ct = default)
+       {
+           var order = repo.Find(query.OrderId);
+           if (order is null)
+               return new(Error.NotFound($"Order '{query.OrderId}' not found."));
+
+           return new(new OrderDto(order.Id, order.CustomerName, order.Product, order.Quantity, order.CreatedAt));
+       }
+   }
+   ```
+
+   Build now with `dotnet build`. If you delete a handler, the build warns with `VIT001`, because a message has no handler. Two handlers for the same message are a `VIT002` error. See [Diagnostics](/Vitreous/reference/diagnostics/).
+
+5. **Add a pipeline behavior.** A behavior wraps every dispatch, like middleware. This one logs each message and how long it took. Create `LoggingBehavior.cs` (from the sample's [`LoggingBehavior.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD/Behaviors/LoggingBehavior.cs)):
+
+   ```csharp
+   // LoggingBehavior.cs
+   using System.Diagnostics;
+   using Vitreous;
+   using Vitreous.Abstractions;
+
+   namespace Orders;
+
+   public sealed class LoggingBehavior<TMessage, TResult>(ILogger<LoggingBehavior<TMessage, TResult>> logger)
+       : IPipelineBehavior<TMessage, TResult>
+   {
+       public async ValueTask<Result<TResult>> Handle(
+           TMessage message,
+           MessageHandlerDelegate<TMessage, TResult> next,
+           CancellationToken ct = default)
+       {
+           var sw     = Stopwatch.StartNew();
+           var result = await next(message, ct);
+
+           if (result.IsSuccess)
+               logger.LogInformation("{MessageType} succeeded in {ElapsedMs}ms", typeof(TMessage).Name, sw.ElapsedMilliseconds);
+           else
+               logger.LogWarning("{MessageType} failed in {ElapsedMs}ms: [{Code}] {Message}",
+                   typeof(TMessage).Name, sw.ElapsedMilliseconds, result.Error.Code, result.Error.Message);
+
+           return result;
+       }
+   }
+   ```
+
+   One open-generic behavior covers every command and query. See [Pipeline behaviors](/Vitreous/concepts/pipeline-behaviors/).
+
+6. **Register everything and map the endpoints.** Replace `Program.cs`:
+
+   ```csharp
+   // Program.cs
+   using Orders;
+   using Vitreous;
+   using Vitreous.Abstractions;
+
+   var builder = WebApplication.CreateBuilder(args);
+
+   builder.Services.AddVitreousHandlers();                                // generated: every handler in the project
+   builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>));      // after AddVitreousHandlers()
+   builder.Services.AddSingleton<OrderRepository>();
+
+   var app = builder.Build();
+
+   app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
+       (await sender.Send(command, ct)).Match(
+           id    => Results.Created($"/orders/{id}", new { id }),
+           error => Results.BadRequest(new { error.Code, error.Message })));
+
+   app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToken ct) =>
+       (await sender.Send(new GetOrderQuery(id), ct)).Match(
+           order => Results.Ok(order),
+           error => Results.NotFound(new { error.Code, error.Message })));
+
+   app.Run();
+   ```
+
+   Endpoints take `ISender`, which dispatches commands and queries. `Match` turns the `Result` into a response: one function for success and one for the error.
+
+7. **Run it.**
+
+   ```sh
+   dotnet run --urls http://localhost:5000
+   ```
+
+   In a second terminal, create an order, then read it back with the ID from the response:
+
+   ```sh
+   curl -i -X POST http://localhost:5000/orders \
+     -H 'Content-Type: application/json' \
+     -d '{"customerName":"Ada","product":"Widget","quantity":2}'
+   # HTTP/1.1 201 Created
+   # Location: /orders/3f2c...
+   # {"id":"3f2c..."}
+
+   curl http://localhost:5000/orders/3f2c...
+   # {"id":"3f2c...","customerName":"Ada","product":"Widget","quantity":2,"createdAt":"..."}
+   ```
+
+   An empty customer name returns `400` with `{"code":"VALIDATION",...}`, and an unknown ID returns `404` with `{"code":"NOT_FOUND",...}`. The console shows a line from `LoggingBehavior` for every request.
+
+</Steps>
+
+<Aside>
+Real APIs usually map error codes to status codes in one place instead of in each endpoint. See [Mapping errors to HTTP status codes](/Vitreous/guides/http-error-mapping/).
+</Aside>
+
+## Next steps
+
+- [Validation](/Vitreous/guides/validation/): replace the `if` in the handler with a FluentValidation validator that runs before it.
+- [Caching](/Vitreous/guides/caching/): make `GetOrderQuery` cacheable and invalidate it from the command.
+- [Developer UI](/Vitreous/guides/developer-ui/): watch each dispatch, with its input, output and logs, in the browser.
+- [Clean Architecture and DDD](/Vitreous/guides/clean-architecture-ddd/): split the feature into Application, Infrastructure and host projects.

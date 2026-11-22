@@ -1,0 +1,68 @@
+---
+title: Quick start
+description: Three steps from an empty project to a working dispatch.
+sidebar:
+  order: 2
+---
+
+import { Aside, Steps } from '@astrojs/starlight/components';
+
+Three steps from an empty project to a working dispatch.
+
+<Steps>
+
+1. **Install** (in the project that contains `Program.cs`):
+
+   ```sh
+   dotnet add package Vitreous
+   dotnet add package Vitreous.SourceGeneration
+   ```
+
+2. **Define a message and its handler** anywhere in your project:
+
+   ```csharp
+   using Vitreous;
+   using Vitreous.Abstractions;
+
+   public sealed record CreateOrderCommand(string Customer) : ICommand<Guid>;
+
+   public sealed class CreateOrderHandler : ICommandHandler<CreateOrderCommand, Guid>
+   {
+       public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+       {
+           if (string.IsNullOrWhiteSpace(command.Customer))
+               return new(Error.Validation("Customer is required."));
+
+           return new(Guid.NewGuid()); // T converts to Result<T> implicitly
+       }
+   }
+   ```
+
+3. **Register and dispatch:**
+
+   ```csharp
+   var builder = WebApplication.CreateBuilder(args);
+   builder.Services.AddVitreousHandlers(); // generated at build time — finds every handler
+
+   var app = builder.Build();
+
+   app.MapPost("/orders", async (CreateOrderCommand cmd, ISender sender, CancellationToken ct) =>
+   {
+       var result = await sender.Send(cmd, ct);
+       return result.Match(
+           id  => Results.Created($"/orders/{id}", new { id }),
+           err => Results.BadRequest(new { err.Code, err.Message }));
+   });
+
+   app.Run();
+   ```
+
+</Steps>
+
+That's it. No attributes, no assembly scanning, and the compiler warns you (`VIT001`) if a command or query has no handler.
+
+<Aside title="No source generator?">
+Call `AddVitreousHandlers(typeof(Program).Assembly)` instead and handlers are discovered by reflection at startup. See [Registration methods](/Vitreous/concepts/registration/).
+</Aside>
+
+Next, [build your first feature](/Vitreous/getting-started/first-feature/) step by step.

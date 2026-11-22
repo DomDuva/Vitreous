@@ -1,0 +1,109 @@
+---
+title: Vitreous
+description: A high-performance, source-generated mediator for .NET, a modern alternative to MediatR with zero runtime reflection.
+template: splash
+hero:
+  tagline: A high-performance, source-generated mediator for .NET. A modern alternative to MediatR with zero runtime reflection, first-class caching and a built-in developer UI.
+  actions:
+    - text: Get started
+      link: /Vitreous/getting-started/quick-start/
+      icon: right-arrow
+    - text: Migrating from MediatR
+      link: /Vitreous/guides/migrating-from-mediatr/
+      variant: minimal
+    - text: View on GitHub
+      link: https://github.com/DomDuva/Vitreous
+      icon: external
+      variant: minimal
+---
+
+import { Card, CardGrid, LinkCard } from '@astrojs/starlight/components';
+
+```sh
+dotnet add package Vitreous
+dotnet add package Vitreous.SourceGeneration
+```
+
+## Why Vitreous
+
+<CardGrid>
+	<Card title="Source-generated" icon="seti:c-sharp">
+		A Roslyn incremental generator finds every handler at build time and emits the
+		dispatcher and `AddVitreousHandlers()`. No assembly scanning at startup.
+	</Card>
+	<Card title="Zero reflection, zero allocations" icon="rocket">
+		Dispatch is one lookup on the message's concrete type. A plain send with no
+		behaviors allocates 0 B.
+	</Card>
+	<Card title="Result type" icon="approve-check">
+		Handlers return `Result<T>` or an `Error` (`NotFound`, `Validation`, `Conflict`, ...)
+		instead of throwing for expected failures.
+	</Card>
+	<Card title="Caching" icon="seti:db">
+		Mark a query `ICacheableQuery<T>` and it is cached in any `IDistributedCache`, or in
+		Redis with tag-based invalidation.
+	</Card>
+	<Card title="Developer UI" icon="laptop">
+		An embedded dashboard with live traces, handler logs, inputs, outputs and cache hits
+		for every dispatch.
+	</Card>
+	<Card title="OpenTelemetry" icon="seti:pipeline">
+		Spans and metrics through `System.Diagnostics`, with nothing to install and no cost
+		until a listener subscribes.
+	</Card>
+	<Card title="Native AOT" icon="seti:config">
+		The core and caching packages are trim- and AOT-compatible, including open-generic
+		behaviors over value types.
+	</Card>
+	<Card title=".NET 8, 9, 10 and 11" icon="star">
+		One multi-targeted package per library, with every supported runtime in it.
+	</Card>
+</CardGrid>
+
+## Quick start
+
+Define a message and its handler anywhere in your project:
+
+```csharp
+using Vitreous;
+using Vitreous.Abstractions;
+
+public sealed record CreateOrderCommand(string Customer) : ICommand<Guid>;
+
+public sealed class CreateOrderHandler : ICommandHandler<CreateOrderCommand, Guid>
+{
+    public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(command.Customer))
+            return new(Error.Validation("Customer is required."));
+
+        return new(Guid.NewGuid()); // T converts to Result<T> implicitly
+    }
+}
+```
+
+Register and dispatch:
+
+```csharp
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddVitreousHandlers(); // generated at build time — finds every handler
+
+var app = builder.Build();
+
+app.MapPost("/orders", async (CreateOrderCommand cmd, ISender sender, CancellationToken ct) =>
+{
+    var result = await sender.Send(cmd, ct);
+    return result.Match(
+        id  => Results.Created($"/orders/{id}", new { id }),
+        err => Results.BadRequest(new { err.Code, err.Message }));
+});
+
+app.Run();
+```
+
+<CardGrid>
+	<LinkCard title="Build your first feature" description="A command, a query, a behavior and the endpoints, step by step." href="/Vitreous/getting-started/first-feature/" />
+	<LinkCard title="Performance" description="Benchmarks against MediatR for dispatch and startup." href="/Vitreous/reference/performance/" />
+</CardGrid>
+
+Vitreous is MIT-licensed. Source, issues and releases are on [GitHub](https://github.com/DomDuva/Vitreous).
