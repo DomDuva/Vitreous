@@ -7,6 +7,7 @@
 [![DevUI](https://img.shields.io/nuget/v/Vitreous.DevUI.svg?label=DevUI)](https://www.nuget.org/packages/Vitreous.DevUI)
 [![Caching](https://img.shields.io/nuget/v/Vitreous.Caching.svg?label=Caching)](https://www.nuget.org/packages/Vitreous.Caching)
 [![Caching.Redis](https://img.shields.io/nuget/v/Vitreous.Caching.Redis.svg?label=Caching.Redis)](https://www.nuget.org/packages/Vitreous.Caching.Redis)
+[![FluentValidation](https://img.shields.io/nuget/v/Vitreous.FluentValidation.svg?label=FluentValidation)](https://www.nuget.org/packages/Vitreous.FluentValidation)
 
 A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, 9, 10 and 11.
 
@@ -19,6 +20,7 @@ A high-performance, source-generated mediator for .NET — a modern alternative 
 | `Vitreous.DevUI` | Embedded developer dashboard: live traces, logs, cache hit indicators |
 | `Vitreous.Caching` | Pipeline behaviors for `IDistributedCache`-backed query caching |
 | `Vitreous.Caching.Redis` | Redis backend with tag-based bulk invalidation |
+| `Vitreous.FluentValidation` | Pipeline behaviors that run FluentValidation validators before the handler |
 
 ---
 
@@ -130,9 +132,10 @@ Vitreous is **~150× faster** to start and allocates **~50× less** — because 
 3. [Caching](#3-caching)
    - [IDistributedCache backend](#idistributedcache-backend)
    - [Redis backend](#redis-backend)
-4. [Putting it all together](#4-putting-it-all-together)
-5. [Migrating from MediatR](#5-migrating-from-mediatr)
-6. [Troubleshooting](#6-troubleshooting)
+4. [Validation (FluentValidation)](#4-validation-fluentvalidation)
+5. [Putting it all together](#5-putting-it-all-together)
+6. [Migrating from MediatR](#6-migrating-from-mediatr)
+7. [Troubleshooting](#7-troubleshooting)
 
 ---
 
@@ -658,6 +661,8 @@ internal sealed partial class AppJsonContext : JsonSerializerContext;
 
 If a type is missing from the context, the cache read or write fails and is logged, and the handler runs as if the entry wasn't cached.
 
+**Validation.** `Vitreous.FluentValidation` is not marked AOT-compatible, because FluentValidation itself is not annotated for trimming.
+
 **DevUI.** `Vitreous.DevUI` serializes arbitrary messages with reflection, so it isn't AOT-compatible. `AddVitreousDevUI()`, `UseVitreousDevUI()` and `MapVitreousDevUI()` raise IL2026 and IL3050. Leave the package out of AOT builds.
 
 **Open-generic behaviors.** Under Native AOT, Microsoft.Extensions.DependencyInjection can't close an open-generic service over a value type. A void command (`Unit` is a struct), a result such as `int` or `Guid`, or a `record struct` message would then throw `InvalidOperationException: Unable to create a generic service for type ... because ... is a ValueType`. The source generator avoids this. It finds the open-generic behaviors in your project and its references, and emits them closed over every message whose types satisfy their constraints. `AddVitreousBehavior` registers those closed behaviors in place of the open generic, and `AddVitreousCaching()` and `AddVitreousRedisCaching()` use it. Two cases are still left to DI as open generics:
@@ -855,9 +860,10 @@ Invalidation only runs when the command returns a success result. Cache removal 
 ```
 TracingBehavior          ← DevUI, always outermost
   └─ LoggingBehavior     ← your custom behaviors
-       └─ CacheInvalidationBehavior
-            └─ CachingBehavior   ← innermost; returns cached value before the handler is called
-                 └─ handler
+       └─ ValidationBehavior     ← Vitreous.FluentValidation, registered before caching
+            └─ CacheInvalidationBehavior
+                 └─ CachingBehavior   ← innermost; returns cached value before the handler is called
+                      └─ handler
 ```
 
 ---
@@ -912,7 +918,65 @@ If Redis is unreachable, requests keep working: messages that don't use the cach
 
 ---
 
-## 4. Putting it all together
+## 4. Validation (FluentValidation)
+
+`Vitreous.FluentValidation` runs your [FluentValidation](https://docs.fluentvalidation.net) validators before the handler. A message that fails validation never reaches its handler: the dispatch returns `Error.Validation` with the failures grouped by property.
+
+```
+dotnet add package Vitreous.FluentValidation
+dotnet add package FluentValidation.DependencyInjectionExtensions
+```
+
+```csharp
+builder.Services.AddVitreousHandlers();
+builder.Services.AddVitreousValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommandValidator>(); // scoped by default
+```
+
+`AddVitreousValidation()` registers the behaviors only. Validators are ordinary FluentValidation validators, registered here by `FluentValidation.DependencyInjectionExtensions`:
+
+```csharp
+public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderCommandValidator()
+    {
+        RuleFor(c => c.CustomerName).NotEmpty();
+        RuleFor(c => c.Quantity).GreaterThan(0);
+    }
+}
+```
+
+The failures are in `Error.Extensions["failures"]`, an `IReadOnlyDictionary<string, string[]>`, ready for `Results.ValidationProblem`:
+
+```csharp
+app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, CancellationToken ct) =>
+    (await sender.Send(command, ct)).Match(
+        id    => Results.Created($"/orders/{id}", new { id }),
+        error => error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
+            ? Results.ValidationProblem(failures.ToDictionary()) // .NET 8 takes an IDictionary; .NET 9+ takes failures as is
+            : Results.Problem(error.Message)));
+```
+
+```json
+{
+  "title": "One or more validation errors occurred.",
+  "status": 400,
+  "errors": {
+    "CustomerName": ["'Customer Name' must not be empty."],
+    "Quantity": ["'Quantity' must be greater than '0'."]
+  }
+}
+```
+
+- **What is validated.** Commands (including void commands), queries and stream queries. A stream query is validated once, before the stream opens, and `CreateStream` returns the failure. Notifications are not validated.
+- **Every validator runs.** All validators registered for the message run one after another, and every failure is reported. Any failure fails the message, whatever its `Severity`, as with FluentValidation's `ValidationResult.IsValid`. The error has code `VALIDATION` and message `Validation failed.`, and the failures are keyed by FluentValidation's `PropertyName`, e.g. `Quantity` or `Lines[0].Sku`.
+- **Messages without a validator** pass straight through, without an extra async step.
+- **Lifetimes.** The behaviors are transient, so they take scoped validators (the `AddValidatorsFromAssembly*` default) from the request's scope. With `DefaultHandlerLifetime = Singleton` the pipeline is resolved from the root provider, so register the validators as singletons: `AddValidatorsFromAssemblyContaining<T>(ServiceLifetime.Singleton)`.
+- **Order.** Behaviors run outermost first. Call `AddVitreousValidation()` before `AddVitreousCaching()` or `AddVitreousRedisCaching()`, so an invalid query never reaches the cache. The DevUI's tracing behaviors are always outermost, so failed validations still appear in the dashboard.
+
+---
+
+## 5. Putting it all together
 
 ```csharp
 var builder = WebApplication.CreateBuilder(args);
@@ -922,6 +986,10 @@ builder.Services.AddVitreousHandlers();
 
 // Custom pipeline behavior
 builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton);
+
+// Validation — before caching, so invalid queries never reach the cache
+builder.Services.AddVitreousValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<Program>();
 
 // Caching — choose one:
 builder.Services.AddDistributedMemoryCache();
@@ -983,7 +1051,7 @@ app.MapGet("/orders/{id:guid}", async (Guid id, ISender sender, CancellationToke
 
 ---
 
-## 5. Migrating from MediatR
+## 6. Migrating from MediatR
 
 Vitreous has the same building blocks as MediatR: requests with exactly one handler, notifications with any number of handlers, streams, and pipeline behaviors. Most of a migration is renaming types. The two changes that touch every handler are that requests split into commands and queries, and that handlers return `ValueTask<Result<T>>` instead of `Task<T>`.
 
@@ -1032,6 +1100,7 @@ builder.Services.AddVitreousBehavior(typeof(ValidationBehavior<,>));
 | `IStreamPipelineBehavior<TRequest, TResponse>` | `IStreamPipelineBehavior<TMessage, TResult>` | Runs before the stream opens |
 | None | `INotificationPipelineBehavior<TNotification>` | Wraps `Publish` |
 | `cfg.AddOpenBehavior(...)`, `cfg.AddBehavior<...>()`, `cfg.AddStreamBehavior<...>()` | `services.AddVitreousBehavior(typeof(...))` | One method for all three behavior kinds |
+| A hand-written FluentValidation `ValidationBehavior` | `services.AddVitreousValidation()` | From `Vitreous.FluentValidation`, see [Validation](#4-validation-fluentvalidation) |
 | `IRequestPreProcessor<TRequest>`, `IRequestPostProcessor<TRequest, TResponse>` | A pipeline behavior | Put the code before or after `await next(message, ct)` |
 | `IRequestExceptionHandler<,,>`, `IRequestExceptionAction<,>` | Return an `Error`, or catch in a behavior | See [Exceptions to Results](#exceptions-to-results) |
 | `cfg.NotificationPublisher`: `ForeachAwaitPublisher`, `TaskWhenAllPublisher` | `VitreousOptions.NotificationPublishStrategy`: `Sequential`, `Parallel` | There are no custom publishers |
@@ -1152,7 +1221,7 @@ app.MapPost("/orders", async (CreateOrderCommand command, ISender sender, Cancel
             : Results.Problem(error.Message)));
 ```
 
-The behavior returns a failed `Result` instead of throwing, so the endpoint branches on the result instead of catching an exception. On .NET 8, `Results.ValidationProblem` takes an `IDictionary`, which is why the failures are copied with `ToDictionary()`.
+The behavior returns a failed `Result` instead of throwing, so the endpoint branches on the result instead of catching an exception. On .NET 8, `Results.ValidationProblem` takes an `IDictionary`, which is why the failures are copied with `ToDictionary()`. If your MediatR behavior runs FluentValidation validators, you don't need to port it: `AddVitreousValidation()` from `Vitreous.FluentValidation` does the same and returns the same `Error.Validation` (see [Validation](#4-validation-fluentvalidation)).
 
 ### Exceptions to Results
 
@@ -1196,7 +1265,7 @@ public sealed class ExceptionBehavior<TMessage, TResult>(ILogger<ExceptionBehavi
 
 ---
 
-## 6. Troubleshooting
+## 7. Troubleshooting
 
 **`No handler registered for command 'X'` at runtime**
 The dispatcher could not find a handler. Check that:

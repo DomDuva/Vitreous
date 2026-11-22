@@ -1,7 +1,9 @@
+using FluentValidation;
 using Scalar.AspNetCore;
 using Vitreous;
 using Vitreous.Abstractions;
 using Vitreous.DevUI.Extensions;
+using Vitreous.FluentValidation;
 using Vitreous.Sample.DDD.Behaviors;
 using Vitreous.Sample.DDD.Application.Orders;
 using Vitreous.Sample.DDD.Application.Orders.Commands;
@@ -28,6 +30,11 @@ builder.Services.AddVitreousHandlers();
 
 // Register the logging pipeline behavior (wraps every command & query)
 builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+
+// FluentValidation — runs each message's validators before its handler. The validators live
+// in the Application project; AddValidatorsFromAssemblyContaining registers them as scoped.
+builder.Services.AddVitreousValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
 
 // Sample infrastructure — shared singleton across all handlers
 builder.Services.AddSingleton<OrderRepository>();
@@ -59,8 +66,11 @@ app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, IPublisher
     var result = await sender.Send(
         new CreateOrderCommand(req.CustomerName, req.Product, req.Quantity), ct);
 
+    // Validation failures carry the per-property messages under Extensions["failures"].
     if (result.IsFailure)
-        return Results.BadRequest(new { error = result.Error.Code, message = result.Error.Message });
+        return result.Error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
+            ? Results.ValidationProblem(failures)
+            : Results.BadRequest(new { error = result.Error.Code, message = result.Error.Message });
 
     // Publish notification — both Application (LogOrderCreatedHandler) and
     // Infrastructure (SendConfirmationEmailHandler) will handle it.
@@ -71,7 +81,7 @@ app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, IPublisher
 })
 .WithName("CreateOrder")
 .WithSummary("Create a new order")
-.WithDescription("Creates an order for the given customer. Returns 400 if CustomerName is empty or Quantity ≤ 0.")
+.WithDescription("Creates an order for the given customer. Returns a 400 validation problem, with the failures per property, if CustomerName or Product is empty or Quantity ≤ 0.")
 .WithTags("Orders");
 
 // GET /orders

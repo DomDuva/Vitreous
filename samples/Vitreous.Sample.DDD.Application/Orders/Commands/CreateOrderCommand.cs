@@ -1,3 +1,4 @@
+using FluentValidation;
 using Microsoft.Extensions.Logging;
 using Vitreous.Abstractions;
 using Vitreous.Sample.DDD.Application.Orders;
@@ -10,6 +11,20 @@ public sealed record CreateOrderCommand(
     string CustomerName,
     string Product,
     int    Quantity) : ICommand<Guid>;
+
+// ── Validator ────────────────────────────────────────────────────────────────
+
+// Runs before the handler through AddVitreousValidation(). An invalid command never reaches
+// the handler: Send returns Error.Validation with the failures grouped by property.
+public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderCommandValidator()
+    {
+        RuleFor(c => c.CustomerName).NotEmpty().WithMessage("CustomerName is required.");
+        RuleFor(c => c.Product).NotEmpty().WithMessage("Product is required.");
+        RuleFor(c => c.Quantity).GreaterThan(0).WithMessage("Quantity must be greater than zero.");
+    }
+}
 
 // ── Handler ──────────────────────────────────────────────────────────────────
 
@@ -31,14 +46,6 @@ public sealed class CreateOrderCommandHandler
         CreateOrderCommand command,
         CancellationToken ct = default)
     {
-        if (string.IsNullOrWhiteSpace(command.CustomerName))
-            return ValueTask.FromResult(
-                Result<Guid>.Fail(Error.Validation("CustomerName is required.")));
-
-        if (command.Quantity <= 0)
-            return ValueTask.FromResult(
-                Result<Guid>.Fail(Error.Validation("Quantity must be greater than zero.")));
-
         var order = new Order(
             Guid.NewGuid(),
             command.CustomerName,

@@ -11,6 +11,7 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
     <PackageReference Include="Scalar.AspNetCore" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
     <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
     <!--
       The source generator is installed ONLY on this entry-point project.
@@ -24,6 +25,7 @@
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Vitreous.DevUI\Vitreous.DevUI.csproj" />
+    <ProjectReference Include="..\..\src\Vitreous.FluentValidation\Vitreous.FluentValidation.csproj" />
     <ProjectReference Include="..\Vitreous.Sample.DDD.Application\Vitreous.Sample.DDD.Application.csproj" />
     <ProjectReference Include="..\Vitreous.Sample.DDD.Infrastructure\Vitreous.Sample.DDD.Infrastructure.csproj" />
   </ItemGroup>

@@ -17,11 +17,13 @@
     <Project Path="src/Vitreous.Caching.Redis/Vitreous.Caching.Redis.csproj" />
     <Project Path="src/Vitreous.Caching/Vitreous.Caching.csproj" />
     <Project Path="src/Vitreous.DevUI/Vitreous.DevUI.csproj" />
+    <Project Path="src/Vitreous.FluentValidation/Vitreous.FluentValidation.csproj" />
     <Project Path="src/Vitreous.SourceGeneration/Vitreous.SourceGeneration.csproj" />
     <Project Path="src/Vitreous/Vitreous.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Vitreous.CachingTests/Vitreous.CachingTests.csproj" />
+    <Project Path="tests/Vitreous.FluentValidationTests/Vitreous.FluentValidationTests.csproj" />
     <Project Path="tests/Vitreous.IntegrationTests/Vitreous.IntegrationTests.csproj" />
     <Project Path="tests/Vitreous.SourceGenerationTests/Vitreous.SourceGenerationTests.csproj" />
     <Project Path="tests/Vitreous.UnitTests/Vitreous.UnitTests.csproj" />
