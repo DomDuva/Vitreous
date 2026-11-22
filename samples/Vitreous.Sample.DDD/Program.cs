@@ -5,11 +5,10 @@ using Vitreous.Abstractions;
 using Vitreous.DevUI.Extensions;
 using Vitreous.FluentValidation;
 using Vitreous.Sample.DDD.Behaviors;
-using Vitreous.Sample.DDD.Application.Orders;
 using Vitreous.Sample.DDD.Application.Orders.Commands;
-using Vitreous.Sample.DDD.Application.Orders.Notifications;
 using Vitreous.Sample.DDD.Application.Orders.Queries;
 using Vitreous.Sample.DDD.Application.Showcase;
+using Vitreous.Sample.DDD.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -22,22 +21,25 @@ var builder = WebApplication.CreateBuilder(args);
 //   Pass 1 — syntax nodes in this project (Vitreous.Sample.DDD)
 //   Pass 2 — metadata scanning of every referenced assembly that directly
 //             references Vitreous. This automatically picks up:
-//               • Vitreous.Sample.DDD.Application  (commands, queries, notifications)
-//               • Vitreous.Sample.DDD.Infrastructure (notification handlers)
+//               • Vitreous.Sample.DDD.Application    (commands, queries, their handlers)
+//               • Vitreous.Sample.DDD.Infrastructure (domain event handlers)
+//             Vitreous.Sample.DDD.Domain is scanned too, but holds no handlers: only the
+//             Order aggregate, its OrderCreated domain event and the IOrderRepository port.
 //
 // No assembly arguments, no manual registration — zero extra configuration.
 builder.Services.AddVitreousHandlers();
 
 // Register the logging pipeline behavior (wraps every command & query)
-builder.Services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>));
+builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton);
 
 // FluentValidation — runs each message's validators before its handler. The validators live
 // in the Application project; AddValidatorsFromAssemblyContaining registers them as scoped.
 builder.Services.AddVitreousValidation();
 builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
 
-// Sample infrastructure — shared singleton across all handlers
-builder.Services.AddSingleton<OrderRepository>();
+// Infrastructure — implements the domain's IOrderRepository port, which saves orders and
+// publishes their domain events.
+builder.Services.AddInfrastructure();
 
 // OpenAPI document (used by Scalar)
 builder.Services.AddOpenApi();
@@ -61,27 +63,25 @@ if (app.Environment.IsDevelopment())
 // ── Endpoints ─────────────────────────────────────────────────────────────────
 
 // POST /orders
-app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, IPublisher publisher, CancellationToken ct) =>
+app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, CancellationToken ct) =>
 {
     var result = await sender.Send(
         new CreateOrderCommand(req.CustomerName, req.Product, req.Quantity), ct);
 
-    // Validation failures carry the per-property messages under Extensions["failures"].
+    // Validation failures carry the per-property messages under Extensions["failures"], both from
+    // the FluentValidation validator and from the Order aggregate's invariants.
+    // On success the OrderCreated domain event has already been handled by both
+    // Application (LogOrderCreatedHandler) and Infrastructure (SendConfirmationEmailHandler).
     if (result.IsFailure)
         return result.Error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
             ? Results.ValidationProblem(failures)
             : Results.BadRequest(new { error = result.Error.Code, message = result.Error.Message });
 
-    // Publish notification — both Application (LogOrderCreatedHandler) and
-    // Infrastructure (SendConfirmationEmailHandler) will handle it.
-    await publisher.Publish(
-        new OrderCreatedNotification(result.Value, req.CustomerName, req.Product), ct);
-
     return Results.Created($"/orders/{result.Value}", new { id = result.Value });
 })
 .WithName("CreateOrder")
 .WithSummary("Create a new order")
-.WithDescription("Creates an order for the given customer. Returns a 400 validation problem, with the failures per property, if CustomerName or Product is empty or Quantity ≤ 0.")
+.WithDescription("Creates an order for the given customer. Returns a 400 validation problem, with the failures per property, if CustomerName or Product is empty or Quantity is not between 1 and 100.")
 .WithTags("Orders");
 
 // GET /orders

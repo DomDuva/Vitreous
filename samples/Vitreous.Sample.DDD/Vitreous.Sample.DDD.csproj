@@ -18,7 +18,8 @@
       It performs two discovery passes:
         Pass 1 — syntax nodes in this project's own compilation
         Pass 2 — metadata scanning of all referenced assemblies that reference Vitreous
-      This means Application and Infrastructure handlers are discovered automatically
+      This means Application and Infrastructure handlers are discovered automatically (Domain,
+      referenced through Application, is scanned too but holds no handlers)
       with zero extra configuration.
     -->
     <ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj"

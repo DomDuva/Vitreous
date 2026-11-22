@@ -33,6 +33,10 @@ app.MapPost("/orders/{id:guid}/shipped", async (Guid id, IPublisher publisher) =
 });
 ```
 
+:::caution[Publish resolves handlers by the type argument]
+`Publish<TNotification>` finds `INotificationHandler<TNotification>` for the type the compiler infers from the argument's static type. A notification held in a variable typed `INotification`, such as an entry in an aggregate's list of domain events, finds no handlers and is silently skipped. Publish each one as its concrete type, for example with a `switch` on the event. See [Domain events](/Vitreous/guides/clean-architecture-ddd/#the-infrastructure-layer).
+:::
+
 `ISender` and `IPublisher` are scoped unless `DefaultHandlerLifetime` is `Singleton`. Minimal APIs and controllers resolve them from the request scope. In a `BackgroundService` or another singleton, create a scope with `IServiceScopeFactory` first. See [Installation](/Vitreous/getting-started/installation/#options).
 
 ## Stream queries

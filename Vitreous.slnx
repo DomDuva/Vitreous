@@ -11,6 +11,7 @@
     <Project Path="samples/Vitreous.Sample.Redis/Vitreous.Sample.Redis.csproj" />
     <Project Path="samples/Vitreous.Sample.DDD/Vitreous.Sample.DDD.csproj" />
     <Project Path="samples/Vitreous.Sample.DDD.Application/Vitreous.Sample.DDD.Application.csproj" />
+    <Project Path="samples/Vitreous.Sample.DDD.Domain/Vitreous.Sample.DDD.Domain.csproj" />
     <Project Path="samples/Vitreous.Sample.DDD.Infrastructure/Vitreous.Sample.DDD.Infrastructure.csproj" />
   </Folder>
   <Folder Name="/src/">
