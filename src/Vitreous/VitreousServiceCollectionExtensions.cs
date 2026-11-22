@@ -53,6 +53,13 @@ public static partial class VitreousServiceCollectionExtensions
         this IServiceCollection services,
         VitreousOptions options)
     {
+        ArgumentNullException.ThrowIfNull(services);
+        ArgumentNullException.ThrowIfNull(options);
+
+        // Publishes by the notification's runtime type. Registered before AddCoreServices, so its
+        // TryAdd of the plain strategy publisher keeps this one.
+        services.TryAdd(new ServiceDescriptor(typeof(IPublisher), typeof(ReflectionPublisher), GetDispatcherLifetime(options)));
+
         AddCoreServices(services, options);
 
         // Fallback sender — overridden by source-generated VitreousDispatcher when present
@@ -98,9 +105,9 @@ public static partial class VitreousServiceCollectionExtensions
         services.TryAdd(new ServiceDescriptor(typeof(SequentialPublisher), typeof(SequentialPublisher), lifetime));
         services.TryAdd(new ServiceDescriptor(typeof(ParallelPublisher), typeof(ParallelPublisher), lifetime));
 
-        // Register IPublisher to the chosen strategy (used by the reflection-based path).
-        // The source-generated dispatcher overrides IPublisher with VitreousDispatcher,
-        // but still resolves the concrete publisher by type internally.
+        // Register IPublisher to the chosen strategy. AddVitreous registers ReflectionPublisher
+        // first, so this only applies to the generated path, where VitreousDispatcher then
+        // replaces IPublisher and resolves the concrete publisher by type internally.
         var publisherType = options.NotificationPublishStrategy == global::Vitreous.NotificationPublishStrategy.Parallel
             ? typeof(ParallelPublisher)
             : typeof(SequentialPublisher);

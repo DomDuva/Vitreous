@@ -5,7 +5,7 @@ sidebar:
   order: 8
 ---
 
-import { Aside, FileTree, Steps } from '@astrojs/starlight/components';
+import { FileTree, Steps } from '@astrojs/starlight/components';
 
 Vitreous works the same in a solution split into layers as in a single project. The source generator runs in the host project only, finds the handlers in every layer at build time, and the layers themselves reference nothing but the core `Vitreous` package. This page walks through the sample in [`samples/Vitreous.Sample.DDD*`](https://github.com/DomDuva/Vitreous/tree/main/samples), four projects that build the orders API from [Build your first feature](/Vitreous/getting-started/first-feature/) around an `Order` aggregate.
 
@@ -189,20 +189,11 @@ public async ValueTask AddAsync(Order order, CancellationToken ct = default)
     _store.Orders[order.Id] = order;
 
     foreach (var domainEvent in order.DequeueDomainEvents())
-        await PublishAsync(domainEvent, ct);
+        await _publisher.Publish(domainEvent, ct);
 }
-
-// Publish<TNotification> resolves handlers by the compile-time type, so publish each event as its concrete type.
-private ValueTask PublishAsync(INotification domainEvent, CancellationToken ct) => domainEvent switch
-{
-    OrderCreated e => _publisher.Publish(e, ct),
-    _              => throw new InvalidOperationException($"No publish case for domain event '{domainEvent.GetType().Name}'."),
-};
 ```
 
-<Aside type="caution" title="Publish each event as its concrete type">
-`IPublisher.Publish<TNotification>` finds the `INotificationHandler<TNotification>` registrations for its type argument, which the compiler picks from the variable's static type. Calling `_publisher.Publish(domainEvent, ct)` with `domainEvent` typed as `INotification` looks for `INotificationHandler<INotification>`, finds none, and does nothing. That is why the repository switches on the event's type. Add a case for each new domain event; the `_` arm throws, so a missing one fails loudly instead of being skipped.
-</Aside>
+Each event is typed `INotification` here. `Publish` dispatches on its runtime type, so an `OrderCreated` reaches the `OrderCreated` handlers. See [Which handlers a notification reaches](/Vitreous/concepts/dispatching/#which-handlers-a-notification-reaches).
 
 The repository is scoped, because `IPublisher` is scoped, while the dictionary it writes to is a singleton. [`DependencyInjection.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/DependencyInjection.cs) registers both, so the host doesn't need to know about either:
 
