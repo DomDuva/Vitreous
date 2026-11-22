@@ -1,9 +1,1 @@
 #nullable enable
-static Vitreous.FluentValidation.VitreousValidationServiceCollectionExtensions.AddVitreousValidation(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
-Vitreous.FluentValidation.Behaviors.StreamValidationBehavior<TMessage, TResult>
-Vitreous.FluentValidation.Behaviors.StreamValidationBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.StreamQueryHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<System.Collections.Generic.IAsyncEnumerable<TResult>!>>
-Vitreous.FluentValidation.Behaviors.StreamValidationBehavior<TMessage, TResult>.StreamValidationBehavior(System.Collections.Generic.IEnumerable<FluentValidation.IValidator<TMessage>!>! validators) -> void
-Vitreous.FluentValidation.Behaviors.ValidationBehavior<TMessage, TResult>
-Vitreous.FluentValidation.Behaviors.ValidationBehavior<TMessage, TResult>.Handle(TMessage message, Vitreous.Abstractions.MessageHandlerDelegate<TMessage, TResult>! next, System.Threading.CancellationToken ct = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.ValueTask<Vitreous.Result<TResult>>
-Vitreous.FluentValidation.Behaviors.ValidationBehavior<TMessage, TResult>.ValidationBehavior(System.Collections.Generic.IEnumerable<FluentValidation.IValidator<TMessage>!>! validators) -> void
-Vitreous.FluentValidation.VitreousValidationServiceCollectionExtensions
