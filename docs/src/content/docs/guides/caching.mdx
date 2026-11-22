@@ -1,0 +1,148 @@
+---
+title: Caching
+description: Cache query results in any IDistributedCache or in Redis, and invalidate them from commands by key or by tag.
+sidebar:
+  order: 2
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+
+Vitreous provides two caching packages. Use `Vitreous.Caching` for any `IDistributedCache` backend (in-memory, SQL, custom). Use `Vitreous.Caching.Redis` for Redis with tag-based bulk invalidation.
+
+## Install and register
+
+<Tabs syncKey="cache">
+<TabItem label="IDistributedCache">
+
+```sh
+dotnet add package Vitreous.Caching
+```
+
+```csharp
+// Register a cache store (your choice of backend)
+builder.Services.AddDistributedMemoryCache();           // in-process, single-node
+// or: builder.Services.AddStackExchangeRedisCache(...) // IDistributedCache over Redis
+
+// Register the Vitreous caching behaviors
+builder.Services.AddVitreousCaching(options =>
+{
+    options.KeyPrefix = "vitreous:"; // default — prepended to every cache key
+});
+```
+
+</TabItem>
+<TabItem label="Redis">
+
+```sh
+dotnet add package Vitreous.Caching.Redis
+```
+
+```csharp
+builder.Services.AddVitreousRedisCaching(options =>
+{
+    options.ConnectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+    options.KeyPrefix        = "vitreous:"; // default
+    options.TagPrefix        = "vtag:";     // default — prefix for Redis Sets used in tag tracking
+});
+```
+
+Do **not** call `AddVitreousCaching()` alongside `AddVitreousRedisCaching()` — the Redis package is self-contained and registers everything internally.
+
+</TabItem>
+</Tabs>
+
+Keys are stored as `{KeyPrefix}:{CacheKey}` with exactly one `:` separator (a prefix that already ends in `:` is not doubled), identically for both backends.
+
+Other options (the Redis backend has the same ones):
+
+- `DefaultAbsoluteExpiration` — TTL for queries that set neither expiration. Default `null` (never expires).
+- `EnableStampedeProtection` — concurrent misses for the same key share one handler call. Default `true`.
+- `JsonSerializerOptions` — used by the default serializer. Register your own `IVitreousCacheSerializer` to replace it.
+
+Values are stored together with their result type, so two queries that share a cache key but return different types get a miss instead of each other's data. All options are listed in the [options reference](/Vitreous/reference/options/).
+
+## Making a query cacheable
+
+Implement `ICacheableQuery<TResult>` instead of `IQuery<TResult>`:
+
+```csharp
+public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
+{
+    public string CacheKey              => $"order:{OrderId}";
+    public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(5);
+    public TimeSpan? SlidingExpiration  => null;
+}
+```
+
+- `CacheKey` must uniquely represent the query — include every parameter that influences the result.
+- `AbsoluteExpiration` takes precedence over `SlidingExpiration` if both are set.
+- `SlidingExpiration` resets the TTL on each cache hit. Not supported by the Redis backend (see [Sliding expiration](#sliding-expiration)).
+- The handler interface (`IQueryHandler<,>`) is unchanged.
+
+## Invalidating cache entries after a command
+
+Implement `IInvalidatesCache` on any command:
+
+```csharp
+public sealed record CreateOrderCommand(Guid CustomerId) : ICommand<Guid>, IInvalidatesCache
+{
+    IReadOnlyList<string> IInvalidatesCache.CacheKeys       => ["orders:list"];
+    IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => []; // tags: Redis backend only
+}
+```
+
+Invalidation only runs when the command returns a success result. Cache removal failures are logged as warnings and do not fail the command.
+
+<Aside>
+`IInvalidatesCache` works on void commands (`ICommand`) too — no need to use `ICommand<bool>` purely for cache invalidation.
+</Aside>
+
+## Behavior pipeline order
+
+```
+TracingBehavior          ← DevUI, always outermost
+  └─ LoggingBehavior     ← your custom behaviors
+       └─ ValidationBehavior     ← Vitreous.FluentValidation, registered before caching
+            └─ CacheInvalidationBehavior
+                 └─ CachingBehavior   ← innermost; returns cached value before the handler is called
+                      └─ handler
+```
+
+## Redis specifics
+
+### Tag-based invalidation
+
+Tags allow invalidating many cache entries at once without knowing every key individually.
+
+```csharp
+public sealed record GetOrderQuery(Guid OrderId) : ICacheableQuery<OrderDto>
+{
+    public string CacheKey              => $"order:{OrderId}";
+    public TimeSpan? AbsoluteExpiration => TimeSpan.FromMinutes(5);
+    public TimeSpan? SlidingExpiration  => null;
+    public IReadOnlyList<string> Tags   => ["orders", $"order:{OrderId}"];
+}
+
+// Invalidates the "orders" tag — removes every key stored under it
+public sealed record CreateOrderCommand(Guid CustomerId) : ICommand<Guid>, IInvalidatesCache
+{
+    IReadOnlyList<string> IInvalidatesCache.CacheKeys       => ["orders:list"];
+    IReadOnlyList<string> IInvalidatesCache.InvalidatesTags => ["orders"];
+}
+```
+
+Internally, each tag is a Redis Set. A value and its tag memberships are written together in one Lua script, and each tag Set expires with the longest-lived entry it holds. `RemoveByTagAsync` detaches the Set atomically, then deletes its entries in pages with `SSCAN` and `UNLINK`, so a large tag never blocks Redis.
+
+<Aside title="Redis Cluster">
+An entry and its tags are written in one script, so they must share a hash slot. Use the same hash tag in both prefixes, e.g. `KeyPrefix = "{myapp}:"` and `TagPrefix = "{myapp}:tag:"`.
+</Aside>
+
+If Redis is unreachable, requests keep working: messages that don't use the cache never touch Redis, and cache reads and writes fail fast and fall back to the handler. The connection created from `ConnectionString` uses `abortConnect=false` and reconnects in the background.
+
+### Sliding expiration
+
+`SlidingExpiration` is not enforced by the Redis backend. If `AbsoluteExpiration` is `null`, the `SlidingExpiration` value is used as a fixed TTL (not a true sliding window). Use the `IDistributedCache` backend if you need genuine sliding expiration semantics.
+
+## Native AOT
+
+Cached values are serialized with System.Text.Json, which needs a `JsonSerializerContext` in AOT apps. See [Native AOT and trimming](/Vitreous/guides/native-aot/#caching).

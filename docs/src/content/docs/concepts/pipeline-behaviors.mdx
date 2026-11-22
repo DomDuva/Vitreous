@@ -1,0 +1,93 @@
+---
+title: Pipeline behaviors
+description: Wrapping every dispatch with middleware-style behaviors for commands, queries, notifications and stream queries.
+sidebar:
+  order: 5
+---
+
+import { Aside, Badge } from '@astrojs/starlight/components';
+
+Pipeline behaviors wrap every dispatch, similar to middleware. Register them with `AddVitreousBehavior` <Badge text="0.4.0+" variant="note" /> after `AddVitreousHandlers()`.
+
+```csharp
+// One registration covers commands (void and non-void), queries, and their full pipeline.
+builder.Services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton);
+```
+
+Behaviors execute outermost-first (first registered = outermost wrapper). `AddVitreousBehavior` takes open-generic and closed behaviors of all three kinds below, defaults to a transient lifetime, and ignores a behavior that is already registered.
+
+<Aside>
+Registering a behavior directly as a service, as in `services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>))`, also works, except under Native AOT for value types. See [Native AOT and trimming](/Vitreous/guides/native-aot/#open-generic-behaviors).
+</Aside>
+
+```csharp
+public sealed class LoggingBehavior<TMessage, TResult>(ILogger<LoggingBehavior<TMessage, TResult>> logger)
+    : IPipelineBehavior<TMessage, TResult>
+{
+    public async ValueTask<Result<TResult>> Handle(
+        TMessage message,
+        MessageHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default)
+    {
+        logger.LogInformation("Handling {MessageType}", typeof(TMessage).Name);
+        var result = await next(message, ct);
+        logger.LogInformation("Handled {MessageType} — {Outcome}",
+            typeof(TMessage).Name, result.IsSuccess ? "success" : "failure");
+        return result;
+    }
+}
+```
+
+## Void commands and Unit
+
+Void commands (`ICommand`) participate in the same `IPipelineBehavior<TMessage, TResult>` pipeline. When behaviors are present, `TResult` is resolved as `Unit` and the handler's `Result` is adapted before the chain runs and converted back on the way out. When no behaviors are registered the handler is called directly with no `Unit` conversion or async state machine overhead.
+
+| Message kind | `TMessage` | `TResult` | Covered by `IPipelineBehavior<,>`? |
+|---|---|---|---|
+| Command with value | `ICommand<TResult>` | e.g. `Guid` | Yes |
+| Void command | `ICommand` | `Unit` | Yes |
+| Query | `IQuery<TResult>` | e.g. `OrderDto` | Yes |
+| Notification | `INotification` | — | No — use `INotificationPipelineBehavior<TNotification>` |
+| Stream query | `IStreamQuery<TResult>` | — | No — use `IStreamPipelineBehavior<TMessage, TResult>` |
+
+## Notification behaviors
+
+Notifications dispatch to multiple handlers with a fan-out model and no `Result` wrapper, so they remain on their own interface, `INotificationPipelineBehavior<TNotification>`.
+
+```csharp
+builder.Services.AddVitreousBehavior(typeof(NotificationLoggingBehavior<>), ServiceLifetime.Singleton);
+```
+
+## Stream pipeline behaviors
+
+Stream queries have their own `IStreamPipelineBehavior<TMessage, TResult>` interface. Behaviors run before the stream is opened and can short-circuit with a failure `Result` before any item is produced.
+
+```csharp
+builder.Services.AddVitreousBehavior(typeof(StreamAuthorizationBehavior<,>));
+```
+
+```csharp
+public sealed class StreamAuthorizationBehavior<TMessage, TResult>(ICurrentUser user)
+    : IStreamPipelineBehavior<TMessage, TResult>
+    where TMessage : IStreamQuery<TResult>
+{
+    public ValueTask<Result<IAsyncEnumerable<TResult>>> Handle(
+        TMessage message,
+        StreamQueryHandlerDelegate<TMessage, TResult> next,
+        CancellationToken ct = default)
+    {
+        if (!user.IsAuthenticated)
+            return new(Result<IAsyncEnumerable<TResult>>.Fail(Error.Unauthorized("Authentication required.")));
+
+        return next(message, ct);
+    }
+}
+```
+
+## Built-in behaviors
+
+The other packages ship their own behaviors, and the order they run in matters:
+
+- [Validation](/Vitreous/guides/validation/): `AddVitreousValidation()` runs FluentValidation validators.
+- [Caching](/Vitreous/guides/caching/): `AddVitreousCaching()` or `AddVitreousRedisCaching()`. The full order is under [Behavior pipeline order](/Vitreous/guides/caching/#behavior-pipeline-order).
+- [Developer UI](/Vitreous/guides/developer-ui/): the tracing behaviors are always outermost.

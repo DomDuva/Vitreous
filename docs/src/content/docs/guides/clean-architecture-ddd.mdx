@@ -1,0 +1,189 @@
+---
+title: Clean Architecture and DDD
+description: A walkthrough of the multi-project sample, with Application, Infrastructure and host layers, the dependency rule, the generator only in the host, and domain events.
+sidebar:
+  order: 8
+---
+
+import { Aside, FileTree, Steps } from '@astrojs/starlight/components';
+
+Vitreous works the same in a solution split into layers as in a single project. The source generator runs in the host project only, finds the handlers in every layer at build time, and the layers themselves reference nothing but the core `Vitreous` package. This page walks through the sample in [`samples/Vitreous.Sample.DDD*`](https://github.com/DomDuva/Vitreous/tree/main/samples), three projects that build the orders API from [Build your first feature](/Vitreous/getting-started/first-feature/).
+
+## The projects
+
+<FileTree>
+- samples/
+  - Vitreous.Sample.DDD/ the host: endpoints, DI, behaviors
+    - Program.cs
+    - Behaviors/
+      - LoggingBehavior.cs
+  - Vitreous.Sample.DDD.Application/ use cases: messages, handlers, validators
+    - Orders/
+      - Order.cs
+      - OrderRepository.cs
+      - Commands/
+        - CreateOrderCommand.cs
+        - DeleteOrderCommand.cs
+      - Queries/
+        - OrderQueries.cs
+      - Notifications/
+        - OrderCreatedNotification.cs
+  - Vitreous.Sample.DDD.Infrastructure/ integrations: email, external services
+    - Orders/
+      - Notifications/
+        - SendConfirmationEmailHandler.cs
+</FileTree>
+
+| Project | Contains | References |
+|---|---|---|
+| `Vitreous.Sample.DDD.Application` | Commands, queries, notifications, their handlers, FluentValidation validators, the `Order` model and its repository | `Vitreous`, `FluentValidation` |
+| `Vitreous.Sample.DDD.Infrastructure` | Handlers that talk to the outside world, such as the confirmation email | `Vitreous`, Application |
+| `Vitreous.Sample.DDD` (host) | `Program.cs`, the endpoints, the logging behavior, DI registration | `Vitreous`, `Vitreous.SourceGeneration`, `Vitreous.DevUI`, `Vitreous.FluentValidation`, Application, Infrastructure |
+
+<Aside>
+The sample keeps the `Order` model in the Application project to stay small. In a full DDD solution it would sit in a Domain project of its own. A Domain project that raises domain events can reference `Vitreous` for the abstractions alone (`INotification`, `Result`, `Error`), and nothing else from Vitreous.
+</Aside>
+
+## The dependency rule
+
+Dependencies point inwards. Application depends on no other project, Infrastructure depends on Application, and the host depends on both. Application declares a notification, and Infrastructure handles it, without Application knowing Infrastructure exists.
+
+```
+Vitreous.Sample.DDD (host)
+  ├── Vitreous.Sample.DDD.Application
+  └── Vitreous.Sample.DDD.Infrastructure
+        └── Vitreous.Sample.DDD.Application
+```
+
+Vitreous fits this rule because messages and handlers are plain types that implement interfaces from the core package. Nothing in Application or Infrastructure registers itself, scans assemblies or refers to the host.
+
+## The generator lives in the host only
+
+Install `Vitreous.SourceGeneration` on the project that calls `AddVitreousHandlers()`, and nowhere else. The sample references it as a project analyzer, from [`Vitreous.Sample.DDD.csproj`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD/Vitreous.Sample.DDD.csproj):
+
+```xml
+<ProjectReference Include="..\..\src\Vitreous.SourceGeneration\Vitreous.SourceGeneration.csproj"
+                  OutputItemType="Analyzer"
+                  ReferenceOutputAssembly="false" />
+```
+
+From NuGet, the same is `dotnet add package Vitreous.SourceGeneration` in the host project. The package is a development dependency, so it adds `PrivateAssets="all"` and never flows to projects that reference the host.
+
+The generator runs two discovery passes at build time:
+
+<Steps>
+
+1. **The host's own source.** Handlers declared in the host, which in the sample is none, and the open-generic behaviors such as `LoggingBehavior<,>`.
+2. **Every referenced assembly that references `Vitreous`.** This picks up the commands, queries and handlers in Application, and `SendConfirmationEmailHandler` in Infrastructure.
+
+</Steps>
+
+So the host's `Program.cs` needs one line, with no assembly list to keep up to date as layers are added:
+
+```csharp
+// samples/Vitreous.Sample.DDD/Program.cs
+builder.Services.AddVitreousHandlers();
+```
+
+A command in Application with no handler anywhere in the solution is a `VIT001` warning when the host builds, and two handlers for it are a `VIT002` error. See [Diagnostics](/Vitreous/reference/diagnostics/).
+
+## Use cases in the Application layer
+
+Each use case is a message and its handler, side by side in one file. [`CreateOrderCommand.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Commands/CreateOrderCommand.cs) holds the command, its validator and its handler:
+
+```csharp
+public sealed record CreateOrderCommand(
+    string CustomerName,
+    string Product,
+    int    Quantity) : ICommand<Guid>;
+
+public sealed class CreateOrderCommandValidator : AbstractValidator<CreateOrderCommand>
+{
+    public CreateOrderCommandValidator()
+    {
+        RuleFor(c => c.CustomerName).NotEmpty().WithMessage("CustomerName is required.");
+        RuleFor(c => c.Product).NotEmpty().WithMessage("Product is required.");
+        RuleFor(c => c.Quantity).GreaterThan(0).WithMessage("Quantity must be greater than zero.");
+    }
+}
+
+public sealed class CreateOrderCommandHandler : ICommandHandler<CreateOrderCommand, Guid>
+{
+    // OrderRepository and ILogger are injected through the constructor.
+
+    public ValueTask<Result<Guid>> Handle(CreateOrderCommand command, CancellationToken ct = default)
+    {
+        var order = new Order(Guid.NewGuid(), command.CustomerName, command.Product, command.Quantity, DateTimeOffset.UtcNow);
+        _repo.Add(order);
+        return ValueTask.FromResult(Result<Guid>.Ok(order.Id));
+    }
+}
+```
+
+The handler has no validation code: the validator runs first, through `AddVitreousValidation()`. Expected failures elsewhere are values, not exceptions. [`DeleteOrderCommand.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Commands/DeleteOrderCommand.cs) returns `Error.NotFound` for an unknown ID, and the host decides that this is a `404`.
+
+The validators live in Application, next to their commands. The host registers them by pointing at any type in that assembly:
+
+```csharp
+builder.Services.AddVitreousValidation();
+builder.Services.AddValidatorsFromAssemblyContaining<CreateOrderCommand>();
+```
+
+## Domain events across layers
+
+`OrderCreatedNotification` is declared in Application, in [`OrderCreatedNotification.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Notifications/OrderCreatedNotification.cs), along with a handler that logs it:
+
+```csharp
+public sealed record OrderCreatedNotification(Guid OrderId, string CustomerName, string Product) : INotification;
+
+public sealed class LogOrderCreatedHandler : INotificationHandler<OrderCreatedNotification> { /* logs the order */ }
+```
+
+Infrastructure adds a second handler for the same event in [`SendConfirmationEmailHandler.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Orders/Notifications/SendConfirmationEmailHandler.cs), without Application referencing Infrastructure:
+
+```csharp
+public sealed class SendConfirmationEmailHandler : INotificationHandler<OrderCreatedNotification>
+{
+    public ValueTask Handle(OrderCreatedNotification notification, CancellationToken ct = default)
+    {
+        // Simulates sending the confirmation email.
+        return ValueTask.CompletedTask;
+    }
+}
+```
+
+The host publishes the event once the command has succeeded, and both handlers run:
+
+```csharp
+app.MapPost("/orders", async (CreateOrderRequest req, ISender sender, IPublisher publisher, CancellationToken ct) =>
+{
+    var result = await sender.Send(new CreateOrderCommand(req.CustomerName, req.Product, req.Quantity), ct);
+
+    if (result.IsFailure)
+        return result.Error.Extensions?.GetValueOrDefault("failures") is IReadOnlyDictionary<string, string[]> failures
+            ? Results.ValidationProblem(failures)
+            : Results.BadRequest(new { error = result.Error.Code, message = result.Error.Message });
+
+    await publisher.Publish(new OrderCreatedNotification(result.Value, req.CustomerName, req.Product), ct);
+
+    return Results.Created($"/orders/{result.Value}", new { id = result.Value });
+});
+```
+
+Publishing from the endpoint keeps the event out of the command when validation fails. A handler can also inject `IPublisher` and publish the event itself, which keeps the rule "an order was created, so tell everyone" in the Application layer. Handlers run one after another by default; set `NotificationPublishStrategy.Parallel` to run them concurrently. See [Notifications](/Vitreous/concepts/messages/#notifications).
+
+## Cross-cutting concerns in the host
+
+[`LoggingBehavior.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD/Behaviors/LoggingBehavior.cs) is an open-generic pipeline behavior in the host. It wraps every command and query from every layer, including void commands such as `DeleteOrderCommand`, whose `TResult` is `Unit`. Behaviors belong wherever the concern belongs: logging and authorization often sit in the host, while a behavior that enforces a business rule can live in Application. The generator finds open-generic behaviors in either.
+
+The sample registers it with `services.AddSingleton(typeof(IPipelineBehavior<,>), typeof(LoggingBehavior<,>))`. Prefer `services.AddVitreousBehavior(typeof(LoggingBehavior<,>), ServiceLifetime.Singleton)` in new code. With the source generator it registers the behavior closed over each message, which also works under Native AOT for void commands and value-type results. See [Pipeline behaviors](/Vitreous/concepts/pipeline-behaviors/).
+
+## Run the sample
+
+```sh
+dotnet run --project samples/Vitreous.Sample.DDD
+```
+
+The API listens on `http://localhost:5096`. In Development it also serves the Scalar API reference at `/scalar/v1` and the [Developer UI](/Vitreous/guides/developer-ui/) at `/vitreous`. Create an order and watch the command, the notification and both of its handlers, from two different projects, appear as traces. The `/showcase/fail/*` endpoints return each kind of `Error`, so you can see how failures look.
+
+Because `Program` is declared `public partial`, an integration test can host the whole app with `WebApplicationFactory<Program>`.

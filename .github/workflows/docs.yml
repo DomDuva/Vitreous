@@ -1,0 +1,59 @@
+name: Docs
+
+# Pull requests only build the site, which also validates every internal link.
+# The site follows the latest release rather than main, so pages never document
+# unreleased features. Run the workflow by hand to ship doc-only fixes between releases.
+on:
+  pull_request:
+    paths:
+      - 'docs/**'
+      - 'src/**'
+      - '.github/workflows/docs.yml'
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: docs
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # lastUpdated reads each page's git history
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: docs/.node-version
+          cache: npm
+          cache-dependency-path: docs/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: docs/dist
+
+  deploy:
+    if: github.event_name != 'pull_request'
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5
