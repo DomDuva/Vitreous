@@ -9,3 +9,8 @@ static Vitreous.Internal.DispatchTelemetry.SendQuery<TResult>(System.Func<System
 Vitreous.Internal.DispatchTelemetry
 Vitreous.VitreousTelemetry
 static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGenerated(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.VitreousOptions! options) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousBehavior(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, System.Type! behaviorType, Microsoft.Extensions.DependencyInjection.ServiceLifetime lifetime = Microsoft.Extensions.DependencyInjection.ServiceLifetime.Transient) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+static Vitreous.VitreousServiceCollectionExtensions.AddVitreousGeneratedBehaviors(this Microsoft.Extensions.DependencyInjection.IServiceCollection! services, Vitreous.Internal.GeneratedBehaviors! behaviors) -> Microsoft.Extensions.DependencyInjection.IServiceCollection!
+Vitreous.Internal.GeneratedBehaviors
+Vitreous.Internal.GeneratedBehaviors.Add(System.Type! serviceType, System.Type! implementationType, System.Func<Microsoft.Extensions.DependencyInjection.ServiceLifetime, Microsoft.Extensions.DependencyInjection.ServiceDescriptor![]!>! close) -> Vitreous.Internal.GeneratedBehaviors!
+Vitreous.Internal.GeneratedBehaviors.GeneratedBehaviors() -> void
