@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net11.0</TargetFramework>
+    <RootNamespace>Vitreous.Sample.DDD.Domain</RootNamespace>
+    <AssemblyName>Vitreous.Sample.DDD.Domain</AssemblyName>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!--
+      The domain references Vitreous for its abstractions only: invariants return Result/Error,
+      and domain events implement INotification. It has no handlers and no DI registration.
+    -->
+    <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
+  </ItemGroup>
+
+</Project>

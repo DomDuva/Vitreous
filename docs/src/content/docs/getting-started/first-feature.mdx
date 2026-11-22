@@ -7,7 +7,7 @@ sidebar:
 
 import { Aside, Steps } from '@astrojs/starlight/components';
 
-This tutorial builds a small orders API from an empty project: a command that creates an order, a query that reads it back, a pipeline behavior that logs every dispatch, and the endpoints that send them. The code is adapted from the sample in [`samples/Vitreous.Sample.DDD.Application`](https://github.com/DomDuva/Vitreous/tree/main/samples/Vitreous.Sample.DDD.Application) and [`samples/Vitreous.Sample.DDD`](https://github.com/DomDuva/Vitreous/tree/main/samples/Vitreous.Sample.DDD), squeezed into one project. The [Clean Architecture walkthrough](/Vitreous/guides/clean-architecture-ddd/) splits the same code into layers.
+This tutorial builds a small orders API from an empty project: a command that creates an order, a query that reads it back, a pipeline behavior that logs every dispatch, and the endpoints that send them. The code is adapted from the layered sample in [`samples/Vitreous.Sample.DDD*`](https://github.com/DomDuva/Vitreous/tree/main/samples), squeezed into one project. The [Clean Architecture walkthrough](/Vitreous/guides/clean-architecture-ddd/) shows the same feature split into Domain, Application, Infrastructure and host layers.
 
 You need the .NET 8 SDK or later.
 
@@ -24,7 +24,7 @@ You need the .NET 8 SDK or later.
 
    `Vitreous.SourceGeneration` runs at build time only. It generates `AddVitreousHandlers()` and the dispatcher, and adds nothing to your app at runtime.
 
-2. **Add an order and somewhere to keep it.** Create `Orders/Order.cs`. An in-memory repository stands in for a database, as in the sample's [`Order.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/Order.cs) and [`OrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Application/Orders/OrderRepository.cs).
+2. **Add an order and somewhere to keep it.** Create `Orders/Order.cs`. An in-memory repository stands in for a database. Both are simplified from the sample's [`Order.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Domain/Orders/Order.cs) aggregate and [`InMemoryOrderRepository.cs`](https://github.com/DomDuva/Vitreous/blob/main/samples/Vitreous.Sample.DDD.Infrastructure/Orders/Persistence/InMemoryOrderRepository.cs).
 
    ```csharp
    // Orders/Order.cs
@@ -198,4 +198,4 @@ Real APIs usually map error codes to status codes in one place instead of in eac
 - [Validation](/Vitreous/guides/validation/): replace the `if` in the handler with a FluentValidation validator that runs before it.
 - [Caching](/Vitreous/guides/caching/): make `GetOrderQuery` cacheable and invalidate it from the command.
 - [Developer UI](/Vitreous/guides/developer-ui/): watch each dispatch, with its input, output and logs, in the browser.
-- [Clean Architecture and DDD](/Vitreous/guides/clean-architecture-ddd/): split the feature into Application, Infrastructure and host projects.
+- [Clean Architecture and DDD](/Vitreous/guides/clean-architecture-ddd/): split the feature into Domain, Application, Infrastructure and host projects, with an aggregate that raises domain events.

@@ -12,6 +12,7 @@
   <ItemGroup>
     <PackageReference Include="FluentValidation" />
     <ProjectReference Include="..\..\src\Vitreous\Vitreous.csproj" />
+    <ProjectReference Include="..\Vitreous.Sample.DDD.Domain\Vitreous.Sample.DDD.Domain.csproj" />
   </ItemGroup>
 
 </Project>

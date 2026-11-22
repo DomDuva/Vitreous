@@ -1,6 +1,6 @@
 using Microsoft.Extensions.Logging;
 using Vitreous.Abstractions;
-using Vitreous.Sample.DDD.Application.Orders;
+using Vitreous.Sample.DDD.Domain.Orders;
 
 namespace Vitreous.Sample.DDD.Application.Orders.Commands;
 
@@ -12,27 +12,26 @@ public sealed record DeleteOrderCommand(Guid OrderId) : ICommand;
 
 public sealed class DeleteOrderCommandHandler : ICommandHandler<DeleteOrderCommand>
 {
-    private readonly OrderRepository _repo;
+    private readonly IOrderRepository _repo;
     private readonly ILogger<DeleteOrderCommandHandler> _logger;
 
     public DeleteOrderCommandHandler(
-        OrderRepository repo,
+        IOrderRepository repo,
         ILogger<DeleteOrderCommandHandler> logger)
     {
         _repo   = repo;
         _logger = logger;
     }
 
-    public ValueTask<Result> Handle(DeleteOrderCommand command, CancellationToken ct = default)
+    public async ValueTask<Result> Handle(DeleteOrderCommand command, CancellationToken ct = default)
     {
-        if (!_repo.Remove(command.OrderId))
+        if (!await _repo.RemoveAsync(command.OrderId, ct))
         {
             _logger.LogWarning("Attempted to delete non-existent order {OrderId}", command.OrderId);
-            return ValueTask.FromResult(Result.Fail(Error.NotFound(
-                $"Order '{command.OrderId}' not found.")));
+            return Result.Fail(Error.NotFound($"Order '{command.OrderId}' not found."));
         }
 
         _logger.LogInformation("Order {OrderId} deleted.", command.OrderId);
-        return ValueTask.FromResult(Result.Success);
+        return Result.Success;
     }
 }
