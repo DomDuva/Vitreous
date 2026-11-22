@@ -8,6 +8,7 @@ on:
     paths:
       - 'docs/**'
       - 'src/**'
+      - '.config/dotnet-tools.json'
       - '.github/workflows/docs.yml'
   release:
     types: [published]
@@ -36,6 +37,11 @@ jobs:
           node-version-file: docs/.node-version
           cache: npm
           cache-dependency-path: docs/package-lock.json
+
+      # The API reference is generated from the net11.0 build, which needs the .NET 11 SDK.
+      - uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: 11.x
 
       - run: npm ci
       - run: npm run build

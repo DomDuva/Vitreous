@@ -70,3 +70,5 @@ BenchmarkDotNet.Artifacts/
 docs/node_modules/
 docs/dist/
 docs/.astro/
+docs/api/obj/
+docs/src/content/docs/api/
