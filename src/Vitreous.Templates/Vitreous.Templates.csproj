@@ -15,8 +15,8 @@
     <TargetFramework>net8.0</TargetFramework>
     <PackageId>Vitreous.Templates</PackageId>
     <Title>Vitreous templates</Title>
-    <Description>dotnet new templates for Vitreous: a minimal API with vertical slices, Vitreous.FluentValidation, caching and the developer UI.</Description>
-    <PackageTags>dotnet-new;templates;mediator;cqrs;vertical-slices;minimal-api</PackageTags>
+    <Description>dotnet new templates for Vitreous: a minimal API, a console app and a worker service, organized in vertical slices, with validation, caching and tests.</Description>
+    <PackageTags>dotnet-new;templates;mediator;cqrs;vertical-slices;minimal-api;console;worker</PackageTags>
     <IsPackable>true</IsPackable>
     <PackageType>Template</PackageType>
     <IncludeBuildOutput>false</IncludeBuildOutput>

@@ -138,6 +138,14 @@ jobs:
           - { template: vitreous-api, name: net9.0, args: "-f net9.0" }
           - { template: vitreous-api, name: net10.0, args: "-f net10.0" }
           - { template: vitreous-api, name: net11.0, args: "-f net11.0" }
+          - { template: vitreous-console, name: net8.0, args: "-f net8.0" }
+          - { template: vitreous-console, name: net9.0, args: "-f net9.0" }
+          - { template: vitreous-console, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-console, name: net11.0, args: "-f net11.0" }
+          - { template: vitreous-worker, name: net8.0, args: "-f net8.0" }
+          - { template: vitreous-worker, name: net9.0, args: "-f net9.0" }
+          - { template: vitreous-worker, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-worker, name: net11.0, args: "-f net11.0" }
           # Options, on net10.0 (the default)
           - { template: vitreous-api, name: options off, args: "--validation false --devui false", project: My-Shop.Api }
           - { template: vitreous-api, name: no tests, args: "--tests false" }
@@ -145,6 +153,12 @@ jobs:
           # No Redis server here: cache errors count as misses, so the tests still pass.
           - { template: vitreous-api, name: caching redis, args: "--caching redis" }
           - { template: vitreous-api, name: aot, args: "--aot --caching memory", aot: true }
+          - { template: vitreous-console, name: options off, args: "--validation false", project: My-Shop.Cli }
+          - { template: vitreous-console, name: no tests, args: "--tests false" }
+          - { template: vitreous-worker, name: options off, args: "--validation false", project: My-Shop.Jobs }
+          - { template: vitreous-worker, name: no tests, args: "--tests false" }
+          - { template: vitreous-worker, name: caching memory, args: "--caching memory" }
+          - { template: vitreous-worker, name: caching redis, args: "--caching redis" }
 
     env:
       PROJECT: ${{ matrix.project || 'Probe' }}
@@ -207,6 +221,45 @@ jobs:
           else
             echo "Created with --tests false: no test project."
           fi
+
+      - name: Run the console app
+        if: matrix.template == 'vitreous-console'
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        env:
+          TodosFile: ${{ runner.temp }}/todos.json
+        run: |
+          app() { dotnet run --no-build --project "src/$PROJECT" -- "$@"; }
+          check() { # name expected actual
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$2', got '$3'"; exit 1
+            fi
+            echo "ok   $1"
+          }
+          code() { app "$@" > /dev/null 2>&1 && echo 0 || echo $?; }
+
+          check "add" "Added 1: Buy milk" "$(app add Buy milk)"
+          check "done" "Completed 1, 0 left to do" "$(app done 1)"
+          check "list" "  1 [x] Buy milk" "$(app list)"
+          check "blank title" 2 "$(code add ' ')"
+          check "not found" 1 "$(code show 42)"
+          check "unknown verb" 2 "$(code nonsense)"
+
+      # The first sample reminder is due right away. SIGTERM must end the worker with exit code 0.
+      - name: Run the worker
+        if: matrix.template == 'vitreous-worker'
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          dll=$(find "src/$PROJECT/bin" -name "$PROJECT.dll" | head -1)
+          (cd "src/$PROJECT" && DOTNET_ENVIRONMENT=Development exec dotnet "$OLDPWD/$dll") > worker.log 2>&1 &
+          pid=$!
+          for _ in $(seq 100); do grep -q "Review the pull request" worker.log && break; sleep 0.1; done
+          kill -TERM $pid
+          wait $pid || { echo "::error::the worker exited with code $?"; cat worker.log; exit 1; }
+
+          for line in "To ada@example.com: Review the pull request" "sent, 2 pending" "Stopping, no more reminders will be sent"; do
+            grep -qF "$line" worker.log || { echo "::error::'$line' is not in the log"; cat worker.log; exit 1; }
+            echo "ok   $line"
+          done
 
       - name: Publish with Native AOT and call the API
         if: matrix.aot

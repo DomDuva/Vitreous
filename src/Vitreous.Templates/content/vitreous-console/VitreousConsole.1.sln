@@ -1,0 +1,42 @@
+
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F501}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitreousConsole.1", "src\VitreousConsole.1\VitreousConsole.1.csproj", "{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502}"
+EndProject
+#if (tests)
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F503}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "VitreousConsole.1.Tests", "tests\VitreousConsole.1.Tests\VitreousConsole.1.Tests.csproj", "{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504}"
+EndProject
+#endif
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502}.Release|Any CPU.Build.0 = Release|Any CPU
+#if (tests)
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504}.Release|Any CPU.Build.0 = Release|Any CPU
+#endif
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502} = {8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F501}
+#if (tests)
+		{8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504} = {8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F503}
+#endif
+	EndGlobalSection
+EndGlobal

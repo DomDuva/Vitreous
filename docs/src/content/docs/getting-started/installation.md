@@ -27,7 +27,7 @@ Every runtime package targets .NET 8, 9, 10 and 11.
 
 ## Install
 
-Starting a new project? `dotnet new install Vitreous.Templates`, then `dotnet new vitreous-api -n MyApp`, creates one with everything below already set up. See [Project templates](/Vitreous/guides/templates/).
+Starting a new project? `dotnet new install Vitreous.Templates`, then `dotnet new vitreous-api -n MyApp`, creates one with everything below already set up. There are templates for a console app and a worker service too. See [Project templates](/Vitreous/guides/templates/).
 
 To add Vitreous to an existing project:
 

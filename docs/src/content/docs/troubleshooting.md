@@ -25,7 +25,7 @@ Commands and queries must have exactly one handler. If you need fan-out, use a n
 
 ## Cannot resolve scoped service 'ISender' from root provider
 
-Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies.
+Handlers are scoped by default, so `ISender` and `IPublisher` are scoped too. Resolve them from a scope (e.g. `IServiceScopeFactory.CreateScope()` in a `BackgroundService`), or set `DefaultHandlerLifetime = ServiceLifetime.Singleton` if no handler has scoped dependencies. The [`vitreous-worker`](/Vitreous/guides/templates/#vitreous-worker) and [`vitreous-console`](/Vitreous/guides/templates/#vitreous-console) templates show both cases as working code.
 
 ## IL2026 / IL3050 on AddVitreousHandlers(...) or AddVitreous()
 

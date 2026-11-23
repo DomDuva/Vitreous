@@ -1,0 +1,138 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "DomDuva",
+  "classifications": [ "Worker", "Vitreous", "CQRS" ],
+  "identity": "Vitreous.Templates.Worker",
+  "groupIdentity": "Vitreous.Templates.Worker",
+  "name": "Vitreous worker service",
+  "description": "A background service built with Vitreous: a BackgroundService that polls on a timer and opens a scope per unit of work to send commands and queries.",
+  "shortName": "vitreous-worker",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "VitreousWorker.1",
+  "preferNameDirectory": true,
+  "guids": [
+    "C27B9D34-0E68-4A1F-93B5-E4F8A06D7201",
+    "C27B9D34-0E68-4A1F-93B5-E4F8A06D7202",
+    "C27B9D34-0E68-4A1F-93B5-E4F8A06D7203",
+    "C27B9D34-0E68-4A1F-93B5-E4F8A06D7204"
+  ],
+  "symbols": {
+    "Framework": {
+      "type": "parameter",
+      "description": "The target framework for the projects.",
+      "datatype": "choice",
+      "choices": [
+        { "choice": "net8.0", "description": "Target .NET 8" },
+        { "choice": "net9.0", "description": "Target .NET 9" },
+        { "choice": "net10.0", "description": "Target .NET 10 (LTS)" },
+        { "choice": "net11.0", "description": "Target .NET 11" }
+      ],
+      "enableQuotelessLiterals": true,
+      "replaces": "net10.0",
+      "defaultValue": "net10.0"
+    },
+    "vitreousVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The version of the Vitreous packages to reference. Defaults to the version these templates shipped with.",
+      "replaces": "VITREOUS_VERSION",
+      "defaultValue": "VITREOUS_PACKAGE_VERSION"
+    },
+    "validation": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Validate commands and queries with Vitreous.FluentValidation.",
+      "defaultValue": "true"
+    },
+    "caching": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "Cache query results with Vitreous.Caching.",
+      "choices": [
+        { "choice": "none", "description": "No caching" },
+        { "choice": "memory", "description": "In-process cache (IDistributedCache in memory)" },
+        { "choice": "redis", "description": "Redis, with a compose.yaml to run it locally" }
+      ],
+      "enableQuotelessLiterals": true,
+      "defaultValue": "none"
+    },
+    "tests": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add an xUnit test project with worker and handler tests.",
+      "defaultValue": "true"
+    },
+    "skipRestore": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Skip the automatic restore of the projects on create.",
+      "defaultValue": "false"
+    },
+    "UseValidation": { "type": "computed", "value": "(validation)" },
+    "UseDevUI": { "type": "computed", "value": "(false)" },
+    "UseOpenApi": { "type": "computed", "value": "(false)" },
+    "UseHost": { "type": "computed", "value": "(true)" },
+    "UseFakeTime": { "type": "computed", "value": "(true)" },
+    "UseCaching": { "type": "computed", "value": "(caching != none)" },
+    "Net8": { "type": "computed", "value": "(Framework == net8.0)" }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!tests)", "exclude": [ "tests/**" ] },
+        { "condition": "(Net8)", "exclude": [ "VitreousWorker.1.slnx" ] },
+        { "condition": "(!Net8)", "exclude": [ "VitreousWorker.1.sln" ] },
+        { "condition": "(caching != redis)", "exclude": [ "compose.yaml" ] }
+      ]
+    }
+  ],
+  "SpecialCustomOperations": {
+    "**/*.md": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    },
+    "**/*.slnx": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    }
+  },
+  "primaryOutputs": [
+    { "path": "src/VitreousWorker.1/VitreousWorker.1.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousWorker.1.Tests/VitreousWorker.1.Tests.csproj" }
+  ],
+  "postActions": [
+    {
+      "id": "restore",
+      "condition": "(!skipRestore)",
+      "description": "Restore NuGet packages required by these projects.",
+      "manualInstructions": [ { "text": "Run 'dotnet restore'" } ],
+      "actionId": "210D431B-A78B-4D2F-B762-4ED3E3EA9025",
+      "continueOnError": true
+    }
+  ]
+}
