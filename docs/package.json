@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "astro dev",
     "start": "astro dev",
-    "build": "astro build",
+    "api": "dotnet tool restore && dotnet docfx metadata api/docfx.json --warningsAsErrors && node scripts/api-reference.mjs",
+    "build": "npm run api && astro build",
+    "build:site": "astro build",
     "preview": "astro preview",
     "astro": "astro"
   },

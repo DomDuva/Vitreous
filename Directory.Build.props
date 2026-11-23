@@ -28,11 +28,10 @@
 
   <!--
     Public API tracking (RS0016/RS0017) for the runtime packages. New public API goes in
-    PublicAPI.Unshipped.txt; each release moves it to PublicAPI.Shipped.txt.
+    PublicAPI.Unshipped.txt; each release moves it to PublicAPI.Shipped.txt. The analyzer
+    package adds both files as AdditionalFiles itself.
   -->
   <ItemGroup Condition="'$(IsPackable)' == 'true' and '$(OutputType)' == 'Library' and '$(IsRoslynComponent)' != 'true'">
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
-    <AdditionalFiles Include="PublicAPI.Shipped.txt" />
-    <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
   </ItemGroup>
 </Project>

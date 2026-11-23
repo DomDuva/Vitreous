@@ -1,0 +1,24 @@
+{
+  "$schema": "https://raw.githubusercontent.com/dotnet/docfx/main/schemas/docfx.schema.json",
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../../src",
+          "files": [
+            "Vitreous/Vitreous.csproj",
+            "Vitreous.Caching/Vitreous.Caching.csproj",
+            "Vitreous.Caching.Redis/Vitreous.Caching.Redis.csproj",
+            "Vitreous.DevUI/Vitreous.DevUI.csproj",
+            "Vitreous.FluentValidation/Vitreous.FluentValidation.csproj"
+          ]
+        }
+      ],
+      "properties": { "TargetFramework": "net11.0" },
+      "outputFormat": "markdown",
+      "output": "obj/md",
+      "memberLayout": "samePage",
+      "namespaceLayout": "nested"
+    }
+  ]
+}
