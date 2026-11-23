@@ -52,12 +52,18 @@ Handlers are scoped, like a `DbContext`, and so are `ISender` and `IPublisher`. 
 ## Add a feature
 
 1. Add a folder under `Features/`, or a file to an existing one.
-2. Create the message and its handler with an item template, or by hand:
+2. Create the message and its handler in that folder, with an item template or by hand:
 
    ```sh
-   dotnet new vitreous-command -n PlaceOrder
+   cd src/VitreousConsole.1/Features/Orders
+   dotnet new vitreous-command -n PlaceOrder --result Guid
    dotnet new vitreous-query -n GetOrder
    ```
+
+   The handler throws until you write it, and the namespace follows the folder.
+<!--#if (UseValidation) -->
+   Add `--validation` for a validator.
+<!--#endif -->
 
 3. Add its verb to `TodoCli`, and call `ToExitCode()` to turn the `Result` into an exit code.
 

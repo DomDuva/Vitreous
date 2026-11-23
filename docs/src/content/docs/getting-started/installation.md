@@ -15,7 +15,7 @@ sidebar:
 | [`Vitreous.Caching`](https://www.nuget.org/packages/Vitreous.Caching) | Pipeline behaviors for `IDistributedCache`-backed query caching |
 | [`Vitreous.Caching.Redis`](https://www.nuget.org/packages/Vitreous.Caching.Redis) | Redis backend with tag-based bulk invalidation |
 | [`Vitreous.FluentValidation`](https://www.nuget.org/packages/Vitreous.FluentValidation) | Pipeline behaviors that run FluentValidation validators before the handler |
-| [`Vitreous.Templates`](https://www.nuget.org/packages/Vitreous.Templates) | `dotnet new` templates for a new project. See [Project templates](/Vitreous/guides/templates/) |
+| [`Vitreous.Templates`](https://www.nuget.org/packages/Vitreous.Templates) | `dotnet new` templates for a new project, and for the messages you add to it. See [Project templates](/Vitreous/guides/templates/) |
 
 Every runtime package targets .NET 8, 9, 10 and 11.
 

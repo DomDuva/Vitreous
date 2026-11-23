@@ -8,6 +8,7 @@
 [![Caching](https://img.shields.io/nuget/v/Vitreous.Caching.svg?label=Caching)](https://www.nuget.org/packages/Vitreous.Caching)
 [![Caching.Redis](https://img.shields.io/nuget/v/Vitreous.Caching.Redis.svg?label=Caching.Redis)](https://www.nuget.org/packages/Vitreous.Caching.Redis)
 [![FluentValidation](https://img.shields.io/nuget/v/Vitreous.FluentValidation.svg?label=FluentValidation)](https://www.nuget.org/packages/Vitreous.FluentValidation)
+[![Templates](https://img.shields.io/nuget/v/Vitreous.Templates.svg?label=Templates)](https://www.nuget.org/packages/Vitreous.Templates)
 [![Docs](https://img.shields.io/badge/docs-domduva.github.io%2FVitreous-0e7490)](https://domduva.github.io/Vitreous/)
 
 A high-performance, source-generated mediator for .NET — a modern alternative to MediatR with zero runtime reflection, first-class caching, and a built-in developer UI. Supports .NET 8, 9, 10 and 11.
@@ -24,6 +25,7 @@ A high-performance, source-generated mediator for .NET — a modern alternative 
 | `Vitreous.Caching` | Pipeline behaviors for `IDistributedCache`-backed query caching | [Caching](https://domduva.github.io/Vitreous/guides/caching/) |
 | `Vitreous.Caching.Redis` | Redis backend with tag-based bulk invalidation | [Caching](https://domduva.github.io/Vitreous/guides/caching/) |
 | `Vitreous.FluentValidation` | Pipeline behaviors that run FluentValidation validators before the handler | [Validation](https://domduva.github.io/Vitreous/guides/validation/) |
+| `Vitreous.Templates` | `dotnet new` templates for new projects, and for the messages and behaviors you add to them | [Project templates](https://domduva.github.io/Vitreous/guides/templates/) |
 
 ---
 
@@ -79,7 +81,28 @@ app.Run();
 
 That's it. No attributes, no assembly scanning, and the compiler warns you (`VIT001`) if a command or query has no handler.
 
+> **Starting a new project?** The [templates](#templates) create one with all of this already set up.
+
 > **No source generator?** Call `AddVitreousHandlers(typeof(Program).Assembly)` instead and handlers are discovered by reflection at startup. See [Registration methods](https://domduva.github.io/Vitreous/concepts/registration/).
+
+---
+
+## Templates
+
+```
+dotnet new install Vitreous.Templates
+dotnet new vitreous-api -n Shop
+```
+
+| Template | Creates |
+|---|---|
+| `vitreous-api` | A minimal API in vertical slices |
+| `vitreous-console` | A command-line app in vertical slices |
+| `vitreous-worker` | A background service in vertical slices |
+| `vitreous-clean` | A layered solution (Domain, Application, Infrastructure) with a host: `--host api`, `console` or `worker` |
+| `vitreous-command`, `vitreous-query`, `vitreous-notification`, `vitreous-behavior` | A message and its handler, or a pipeline behavior, in an existing project |
+
+Every project template takes `-f net8.0` to `net11.0`, `--validation` and `--tests`. Most also take `--caching none|memory|redis`, and `vitreous-api` takes `--aot`. Start with vertical slices; pick `vitreous-clean` when you have business rules to keep apart from the database and the app around them. See [Project templates](https://domduva.github.io/Vitreous/guides/templates/) for every option and what is in each project.
 
 ---
 
@@ -122,6 +145,7 @@ Everything lives on the [documentation site](https://domduva.github.io/Vitreous/
 - [Registration methods](https://domduva.github.io/Vitreous/concepts/registration/) — source-generated vs. reflection-based
 
 **Guides**
+- [Project templates](https://domduva.github.io/Vitreous/guides/templates/) for `dotnet new`
 - [Validation](https://domduva.github.io/Vitreous/guides/validation/) with FluentValidation
 - [Caching](https://domduva.github.io/Vitreous/guides/caching/) with `IDistributedCache` or Redis
 - [OpenTelemetry](https://domduva.github.io/Vitreous/guides/opentelemetry/) traces and metrics

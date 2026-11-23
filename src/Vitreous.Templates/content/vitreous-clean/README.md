@@ -99,9 +99,16 @@ dotnet test
 2. Create the message and its handler in `src/VitreousClean.1.Application`, with an item template or by hand:
 
    ```sh
+   cd src/VitreousClean.1.Application/Orders
    dotnet new vitreous-command -n CancelOrder
-   dotnet new vitreous-query -n GetInvoice
+   dotnet new vitreous-query -n GetOrderTotal --result decimal
    ```
+
+   The handler throws until you write it, and the namespace follows the folder.
+<!--#if (UseValidation) -->
+   Add `--validation` for a validator.
+<!--#endif -->
+   For a domain event, run `dotnet new vitreous-notification -n OrderCancelled --handler false` in the domain project.
 
 <!--#if (HostApi) -->
 3. Map its endpoint in `src/VitreousClean.1.Api`, and call `ToHttpResult()` to turn the `Result` into a response.

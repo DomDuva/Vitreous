@@ -134,28 +134,28 @@ jobs:
       matrix:
         include:
           # Defaults on every target framework
-          - { template: vitreous-api, name: net8.0, args: "-f net8.0" }
+          - { template: vitreous-api, name: net8.0, args: "-f net8.0", items: true }
           - { template: vitreous-api, name: net9.0, args: "-f net9.0" }
-          - { template: vitreous-api, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-api, name: net10.0, args: "-f net10.0", items: true }
           - { template: vitreous-api, name: net11.0, args: "-f net11.0" }
           - { template: vitreous-console, name: net8.0, args: "-f net8.0" }
           - { template: vitreous-console, name: net9.0, args: "-f net9.0" }
-          - { template: vitreous-console, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-console, name: net10.0, args: "-f net10.0", items: true }
           - { template: vitreous-console, name: net11.0, args: "-f net11.0" }
           - { template: vitreous-worker, name: net8.0, args: "-f net8.0" }
           - { template: vitreous-worker, name: net9.0, args: "-f net9.0" }
-          - { template: vitreous-worker, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-worker, name: net10.0, args: "-f net10.0", items: true }
           - { template: vitreous-worker, name: net11.0, args: "-f net11.0" }
-          - { template: vitreous-clean, name: net8.0, args: "-f net8.0", host: Api }
+          - { template: vitreous-clean, name: net8.0, args: "-f net8.0", host: Api, items: true }
           - { template: vitreous-clean, name: net9.0, args: "-f net9.0", host: Api }
-          - { template: vitreous-clean, name: net10.0, args: "-f net10.0", host: Api }
+          - { template: vitreous-clean, name: net10.0, args: "-f net10.0", host: Api, items: true }
           - { template: vitreous-clean, name: net11.0, args: "-f net11.0", host: Api }
           - { template: vitreous-clean, name: console net8.0, args: "--host console -f net8.0", host: Cli }
           - { template: vitreous-clean, name: console net10.0, args: "--host console -f net10.0", host: Cli }
           - { template: vitreous-clean, name: worker net8.0, args: "--host worker -f net8.0", host: Worker }
           - { template: vitreous-clean, name: worker net10.0, args: "--host worker -f net10.0", host: Worker }
           # Options, on net10.0 (the default)
-          - { template: vitreous-api, name: options off, args: "--validation false --devui false", project: My-Shop.Api }
+          - { template: vitreous-api, name: options off, args: "--validation false --devui false", project: My-Shop.Api, items: true }
           - { template: vitreous-api, name: no tests, args: "--tests false" }
           - { template: vitreous-api, name: caching memory, args: "--caching memory" }
           # No Redis server here: cache errors count as misses, so the tests still pass.
@@ -167,7 +167,7 @@ jobs:
           - { template: vitreous-worker, name: no tests, args: "--tests false" }
           - { template: vitreous-worker, name: caching memory, args: "--caching memory" }
           - { template: vitreous-worker, name: caching redis, args: "--caching redis" }
-          - { template: vitreous-clean, name: options off, args: "--validation false --devui false", host: Api, project: My-Shop }
+          - { template: vitreous-clean, name: options off, args: "--validation false --devui false", host: Api, project: My-Shop, items: true }
           - { template: vitreous-clean, name: no tests, args: "--tests false", host: Api }
           - { template: vitreous-clean, name: caching memory, args: "--caching memory", host: Api }
           - { template: vitreous-clean, name: caching redis, args: "--caching redis", host: Api }
@@ -342,6 +342,51 @@ jobs:
             grep -qF "$line" worker.log || { echo "::error::'$line' is not in the log"; cat worker.log; exit 1; }
             echo "ok   $line"
           done
+
+      # Item templates, in a new folder of the project. The namespace must follow the folder, and
+      # the project must still build and pass its tests (clean: the dependency rule too).
+      - name: Add items
+        if: matrix.items
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          root=$PWD
+          project=$PROJECT
+          if [ "${{ matrix.template }}" = vitreous-clean ]; then project+=.Application; fi
+          validation=
+          if grep -q Vitreous.FluentValidation Directory.Packages.props; then validation=--validation; fi
+
+          mkdir -p "src/$project/Features/Invoices"
+          cd "src/$project/Features/Invoices"
+          dotnet new vitreous-command -n SendInvoice
+          dotnet new vitreous-command -n PayInvoiceCommand --result Guid $validation
+          dotnet new vitreous-query -n GetInvoice $validation
+          dotnet new vitreous-query -n ListInvoices --result "IReadOnlyList<string>"
+          dotnet new vitreous-notification -n InvoiceSent
+          dotnet new vitreous-notification -n InvoicePaid --handler false
+          dotnet new vitreous-behavior -n Audit
+          dotnet new vitreous-command -n Archive --namespace Custom.Namespace
+
+          check() { # file expected
+            grep -qF "$2" "$1" || { echo "::error::$1 does not contain '$2'"; cat "$1"; exit 1; }
+            echo "ok   $1: $2"
+          }
+          namespace="namespace ${project//-/_}.Features.Invoices;"
+          for file in SendInvoice PayInvoice GetInvoice ListInvoices InvoiceSent InvoicePaid AuditBehavior; do
+            check $file.cs "$namespace"
+          done
+          check Archive.cs "namespace Custom.Namespace;"
+          check SendInvoice.cs "record SendInvoiceCommand : ICommand;"
+          check PayInvoice.cs "record PayInvoiceCommand : ICommand<Guid>;"
+          check GetInvoice.cs "record GetInvoiceQuery : IQuery<GetInvoiceResponse>;"
+          check ListInvoices.cs "record ListInvoicesQuery : IQuery<IReadOnlyList<string>>;"
+          if [ -n "$validation" ]; then check PayInvoice.cs "class PayInvoiceValidator"; fi
+          if grep -q InvoicePaidHandler InvoicePaid.cs; then
+            echo "::error::--handler false still creates a handler"; exit 1
+          fi
+
+          cd "$root"
+          dotnet build -warnaserror
+          dotnet test --no-build
 
       - name: Publish with Native AOT and call the API
         if: matrix.aot

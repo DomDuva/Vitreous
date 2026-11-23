@@ -7,7 +7,7 @@ using Vitreous.Abstractions;
 namespace VitreousWorker._1.Features.Reminders;
 
 // A vertical slice: the command, its validator and its handler live in one file, so a feature is
-// read, changed or deleted in one place. Add the next one with:
+// read, changed or deleted in one place. Add the next one from its folder with:
 //   dotnet new vitreous-command -n <Name>
 
 // A command without a result: ICommand, and the handler returns Result.
