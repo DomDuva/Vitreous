@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/VitreousClean.1.Domain/VitreousClean.1.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

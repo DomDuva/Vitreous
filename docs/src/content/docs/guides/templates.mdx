@@ -25,8 +25,9 @@ dotnet run --project src/Shop
 | [`vitreous-api`](#vitreous-api) | An ASP.NET Core minimal API |
 | [`vitreous-console`](#vitreous-console) | A command-line app on the .NET Generic Host |
 | [`vitreous-worker`](#vitreous-worker) | A background service that polls on a timer |
+| [`vitreous-clean`](#vitreous-clean) | A layered solution: Domain, Application, Infrastructure and one of the hosts above |
 
-All of them are organized in **vertical slices**: each feature keeps its command or query, validator, handler and entry point (an endpoint, or a verb on the command line) in one file, so you read, change or delete a feature in one place.
+The first three are organized in **vertical slices**: each feature keeps its command or query, validator, handler and entry point (an endpoint, or a verb on the command line) in one file, so you read, change or delete a feature in one place. `vitreous-clean` is organized in **layers**, so the business rules can't depend on the database or the app around them. Start with slices unless you have business rules worth protecting: one project is less to navigate, and Vitreous works the same in both.
 
 Each generated project has a `README.md` that explains its layout, how to run and test it, and where the next feature goes.
 
@@ -120,16 +121,70 @@ await work(scope.ServiceProvider.GetRequiredService<ISender>());
 
 A failed `Result` is logged and tried again on the next tick, and an unexpected exception is logged instead of stopping the host. On Ctrl+C or SIGTERM, the handler that is running gets a cancelled token and nothing new starts. The timer and the handlers read the time from `TimeProvider`, so the tests move the clock forward instead of waiting.
 
+## `vitreous-clean`
+
+The layers of Clean Architecture around a DDD aggregate, with an API, a console app or a worker on top.
+
+```sh
+dotnet new vitreous-clean -n Shop
+dotnet new vitreous-clean -n Shop.Jobs --host worker
+```
+
+```text
+Shop/
+  src/
+    Shop.Domain/              references Vitreous, for its abstractions only
+      Money.cs                value object
+      IHasDomainEvents.cs
+      Orders/                 Order aggregate, OrderLine, OrderId, OrderPlaced, OrderShipped
+    Shop.Application/
+      DependencyInjection.cs  AddApplication(): behaviors and validators
+      Abstractions/           IAppDbContext, IEmailSender
+      Common/LoggingBehavior.cs
+      Orders/
+        PlaceOrder.cs         command + validator + handler
+        ShipOrder.cs          command without a result
+        GetOrder.cs           query
+        ListOrders.cs         stream query
+        EmailCustomer.cs      handles the domain events
+    Shop.Infrastructure/
+      DependencyInjection.cs  AddInfrastructure(): EF Core, email, caching
+      Persistence/            AppDbContext, and how Order is mapped
+      Email/
+    Shop.Api/                 or Shop.Cli, or Shop.Worker
+  tests/
+    Shop.Domain.Tests/        business rules, as plain classes
+    Shop.Application.Tests/   handlers on a SQLite in-memory database
+    Shop.Architecture.Tests/  the dependency rule
+    Shop.Api.Tests/           the whole app, over HTTP
+```
+
+- **The domain decides.** `Order` changes only through its methods, and each returns a `Result`, so an order that breaks a business rule can't exist. It records domain events, which are plain notifications.
+- **No repositories.** Handlers use EF Core through `IAppDbContext`, which Application declares and Infrastructure's `AppDbContext` implements. `SaveChangesAsync` saves, then publishes the domain events of the saved entities.
+- **The dependency rule is a test.** `Shop.Architecture.Tests` lists the assemblies each layer may use, and fails when one uses another.
+- **The generator is on the host only.** It finds the handlers of every layer at build time.
+
+`--host` changes the host project and its tests, and nothing else:
+
+| `--host` | Project | What it does |
+|---|---|---|
+| `api` (default) | `Shop.Api` | Minimal API endpoints, OpenAPI + Scalar, and the developer UI in Development |
+| `console` | `Shop.Cli` | `place`, `list`, `show` and `ship` verbs, with the exit codes of [`vitreous-console`](#vitreous-console). Named `Cli` because code in a `Shop.Console` namespace couldn't call `Console.WriteLine`. |
+| `worker` | `Shop.Worker` | Ships the placed orders on a timer, with a scope per unit of work as in [`vitreous-worker`](#vitreous-worker) |
+
+The orders are in a SQLite file that the app creates on its first run with `EnsureCreated`. Switch to [EF Core migrations](https://learn.microsoft.com/ef/core/managing-schemas/migrations/) before you have data to keep. The reasoning behind the layers is in [Clean Architecture and DDD](/Vitreous/guides/clean-architecture-ddd/).
+
 ## Options
 
 | Option | Templates | Values | Default | What it does |
 |---|---|---|---|---|
-| `-f`, `--framework` | all | `net8.0` `net9.0` `net10.0` `net11.0` | `net10.0` | The target framework. Package versions follow it, e.g. `Microsoft.Extensions.Hosting` 9.x on `net9.0`. On `net8.0`, the solution is a `.sln` because the .NET 8 SDK can't read `.slnx`, and in `vitreous-api` Swashbuckle generates the OpenAPI document, because `AddOpenApi()` arrived in .NET 9. |
+| `-f`, `--framework` | all | `net8.0` `net9.0` `net10.0` `net11.0` | `net10.0` | The target framework. Package versions follow it, e.g. `Microsoft.Extensions.Hosting` 9.x on `net9.0`. On `net8.0`, the solution is a `.sln` because the .NET 8 SDK can't read `.slnx`, and in the API templates Swashbuckle generates the OpenAPI document, because `AddOpenApi()` arrived in .NET 9. |
+| `--host` | `vitreous-clean` | `api` `console` `worker` | `api` | The app on top of the layers. |
 | `--validation` | all | `true` `false` | `true` | Adds `Vitreous.FluentValidation` and a validator. |
-| `--caching` | `vitreous-api`, `vitreous-worker` | `none` `memory` `redis` | `none` | Caches a query (`GetTodoQuery` or `GetRecipientQuery` becomes an `ICacheableQuery`). `memory` uses the in-memory `IDistributedCache`. `redis` uses `Vitreous.Caching.Redis`, reads the `Redis` connection string, and adds a `compose.yaml` that runs Redis locally. See [Caching](/Vitreous/guides/caching/). |
-| `--devui` | `vitreous-api` | `true` `false` | `true` | Adds `Vitreous.DevUI`, which is on in Development only. |
+| `--caching` | all but `vitreous-console` | `none` `memory` `redis` | `none` | Caches a query (`GetTodoQuery`, `GetRecipientQuery` or `GetOrderQuery` becomes an `ICacheableQuery`). `memory` uses the in-memory `IDistributedCache`. `redis` uses `Vitreous.Caching.Redis`, reads the `Redis` connection string, and adds a `compose.yaml` that runs Redis locally. See [Caching](/Vitreous/guides/caching/). |
+| `--devui` | `vitreous-api`, `vitreous-clean --host api` | `true` `false` | `true` | Adds `Vitreous.DevUI`, which is on in Development only. |
 | `--aot` | `vitreous-api` | `true` `false` | `false` | Publishes with Native AOT: `CreateSlimBuilder`, `PublishAot` and a source-generated `JsonSerializerContext` for every type an endpoint reads or writes. See [Native AOT](/Vitreous/guides/native-aot/). |
-| `--tests` | all | `true` `false` | `true` | Adds the xUnit test project. |
+| `--tests` | all | `true` `false` | `true` | Adds the xUnit test project, or projects. |
 | `--vitreous-version` | all | a version | the template pack's own | The version of the Vitreous packages to reference. |
 | `--no-restore` | all | | | Skips the restore after the project is created. |
 
@@ -142,6 +197,7 @@ dotnet new vitreous-api -n Shop -f net8.0
 dotnet new vitreous-api -n Shop --caching redis
 dotnet new vitreous-api -n Shop --aot --caching memory
 dotnet new vitreous-worker -n Shop.Jobs --caching redis
+dotnet new vitreous-clean -n Shop --host console -f net9.0
 ```
 
 ## Versions

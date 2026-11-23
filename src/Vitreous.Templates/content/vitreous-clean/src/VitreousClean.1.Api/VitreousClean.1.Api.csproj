@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <!--
+      Generates AddVitreousHandlers() and the dispatcher at compile time. It is installed on the
+      host only: besides this project's own source, it reads every referenced project that
+      references Vitreous, so it finds the handlers in Application and Infrastructure. Build-time
+      only, so PrivateAssets keeps it out of projects that reference this one (the tests).
+    -->
+    <PackageReference Include="Vitreous.SourceGeneration" PrivateAssets="all" />
+    <PackageReference Include="Vitreous" />
+<!--#if (UseDevUI) -->
+    <PackageReference Include="Vitreous.DevUI" />
+<!--#endif -->
+<!--#if (Net8) -->
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+<!--#else -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+<!--#endif -->
+    <PackageReference Include="Scalar.AspNetCore" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../VitreousClean.1.Infrastructure/VitreousClean.1.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>

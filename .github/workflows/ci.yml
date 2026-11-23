@@ -146,6 +146,14 @@ jobs:
           - { template: vitreous-worker, name: net9.0, args: "-f net9.0" }
           - { template: vitreous-worker, name: net10.0, args: "-f net10.0" }
           - { template: vitreous-worker, name: net11.0, args: "-f net11.0" }
+          - { template: vitreous-clean, name: net8.0, args: "-f net8.0", host: Api }
+          - { template: vitreous-clean, name: net9.0, args: "-f net9.0", host: Api }
+          - { template: vitreous-clean, name: net10.0, args: "-f net10.0", host: Api }
+          - { template: vitreous-clean, name: net11.0, args: "-f net11.0", host: Api }
+          - { template: vitreous-clean, name: console net8.0, args: "--host console -f net8.0", host: Cli }
+          - { template: vitreous-clean, name: console net10.0, args: "--host console -f net10.0", host: Cli }
+          - { template: vitreous-clean, name: worker net8.0, args: "--host worker -f net8.0", host: Worker }
+          - { template: vitreous-clean, name: worker net10.0, args: "--host worker -f net10.0", host: Worker }
           # Options, on net10.0 (the default)
           - { template: vitreous-api, name: options off, args: "--validation false --devui false", project: My-Shop.Api }
           - { template: vitreous-api, name: no tests, args: "--tests false" }
@@ -159,6 +167,12 @@ jobs:
           - { template: vitreous-worker, name: no tests, args: "--tests false" }
           - { template: vitreous-worker, name: caching memory, args: "--caching memory" }
           - { template: vitreous-worker, name: caching redis, args: "--caching redis" }
+          - { template: vitreous-clean, name: options off, args: "--validation false --devui false", host: Api, project: My-Shop }
+          - { template: vitreous-clean, name: no tests, args: "--tests false", host: Api }
+          - { template: vitreous-clean, name: caching memory, args: "--caching memory", host: Api }
+          - { template: vitreous-clean, name: caching redis, args: "--caching redis", host: Api }
+          - { template: vitreous-clean, name: console options off, args: "--host console --validation false", host: Cli, project: My-Shop }
+          - { template: vitreous-clean, name: worker caching redis, args: "--host worker --caching redis", host: Worker }
 
     env:
       PROJECT: ${{ matrix.project || 'Probe' }}
@@ -257,6 +271,74 @@ jobs:
           wait $pid || { echo "::error::the worker exited with code $?"; cat worker.log; exit 1; }
 
           for line in "To ada@example.com: Review the pull request" "sent, 2 pending" "Stopping, no more reminders will be sent"; do
+            grep -qF "$line" worker.log || { echo "::error::'$line' is not in the log"; cat worker.log; exit 1; }
+            echo "ok   $line"
+          done
+
+      - name: Run the layered solution (API)
+        if: matrix.host == 'Api'
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          dll=$PWD/$(find "src/$PROJECT.Api/bin" -name "$PROJECT.Api.dll" | head -1)
+          base=http://127.0.0.1:5080
+          (cd "src/$PROJECT.Api" && ASPNETCORE_ENVIRONMENT=Development ASPNETCORE_URLS=$base exec dotnet "$dll") > app.log 2>&1 &
+          for _ in $(seq 100); do curl -sf $base/orders > /dev/null && break; sleep 0.1; done
+
+          check() { # name expected actual
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$2', got '$3'"; cat app.log; exit 1
+            fi
+            echo "ok   $1"
+          }
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+          place() { curl -sf -H 'content-type: application/json' -X POST $base/orders \
+            -d '{"customerEmail":"ada@example.com","currency":"EUR","lines":[{"product":"Keyboard","quantity":2,"unitPrice":49.90}]}'; }
+
+          id=$(place | jq -r .id)
+          check "get" 99.8 "$(curl -sf $base/orders/$id | jq .total)"
+          check "ship" 204 "$(status -X POST $base/orders/$id/ship)"
+          check "ships once" 409 "$(status -X POST $base/orders/$id/ship)"
+          check "list" '["Shipped"]' "$(curl -sf $base/orders | jq -c 'map(.status)')"
+          check "no lines" 400 "$(status -H 'content-type: application/json' -X POST $base/orders -d '{}')"
+          check "not found" 404 "$(status $base/orders/00000000-0000-0000-0000-000000000000)"
+          check "domain events" 2 "$(grep -c 'Email to ada@example.com' app.log)"
+
+      - name: Run the layered solution (console)
+        if: matrix.host == 'Cli'
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        env:
+          ConnectionStrings__Database: Data Source=${{ runner.temp }}/orders.db
+        run: |
+          app() { dotnet run --no-build --project "src/$PROJECT.Cli" -- "$@"; }
+          check() { # name expected actual
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$2', got '$3'"; exit 1
+            fi
+            echo "ok   $1"
+          }
+          code() { app "$@" > /dev/null 2>&1 && echo 0 || echo $?; }
+
+          id=$(app place ada@example.com Keyboard 2 49.90)
+          check "list" "$id  Placed        99.80 EUR  ada@example.com" "$(app list)"
+          check "ship" 0 "$(code ship $id)"
+          check "ships once" 1 "$(code ship $id)"
+          check "list placed" "" "$(app list placed)"
+          check "no quantity" 2 "$(code place ada@example.com Keyboard 0 49.90)"
+          check "unknown verb" 2 "$(code nonsense)"
+
+      # In Development, the worker places two sample orders and ships them.
+      - name: Run the layered solution (worker)
+        if: matrix.host == 'Worker'
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          dll=$PWD/$(find "src/$PROJECT.Worker/bin" -name "$PROJECT.Worker.dll" | head -1)
+          (cd "src/$PROJECT.Worker" && DOTNET_ENVIRONMENT=Development exec dotnet "$dll") > worker.log 2>&1 &
+          pid=$!
+          for _ in $(seq 100); do [ "$(grep -c 'is on its way' worker.log)" = 2 ] && break; sleep 0.1; done
+          kill -TERM $pid
+          wait $pid || { echo "::error::the worker exited with code $?"; cat worker.log; exit 1; }
+
+          for line in "Email to ada@example.com: We received your order" "Email to grace@example.com: Your order" "Stopping, no more orders will be shipped"; do
             grep -qF "$line" worker.log || { echo "::error::'$line' is not in the log"; cat worker.log; exit 1; }
             echo "ok   $line"
           done

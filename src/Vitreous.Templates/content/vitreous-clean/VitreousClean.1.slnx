@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VitreousClean.1.Domain/VitreousClean.1.Domain.csproj" />
+    <Project Path="src/VitreousClean.1.Application/VitreousClean.1.Application.csproj" />
+    <Project Path="src/VitreousClean.1.Infrastructure/VitreousClean.1.Infrastructure.csproj" />
+    <Project Path="src/VitreousClean.1.HOSTPROJECT/VitreousClean.1.HOSTPROJECT.csproj" />
+  </Folder>
+<!--#if (tests) -->
+  <Folder Name="/tests/">
+    <Project Path="tests/VitreousClean.1.Domain.Tests/VitreousClean.1.Domain.Tests.csproj" />
+    <Project Path="tests/VitreousClean.1.Application.Tests/VitreousClean.1.Application.Tests.csproj" />
+    <Project Path="tests/VitreousClean.1.Architecture.Tests/VitreousClean.1.Architecture.Tests.csproj" />
+    <Project Path="tests/VitreousClean.1.HOSTPROJECT.Tests/VitreousClean.1.HOSTPROJECT.Tests.csproj" />
+  </Folder>
+<!--#endif -->
+</Solution>

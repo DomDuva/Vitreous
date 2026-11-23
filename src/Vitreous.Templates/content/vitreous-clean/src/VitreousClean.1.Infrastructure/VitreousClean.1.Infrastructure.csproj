@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Vitreous" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" />
+<!--#if (caching == "memory") -->
+    <PackageReference Include="Vitreous.Caching" />
+    <PackageReference Include="Microsoft.Extensions.Caching.Memory" />
+<!--#elseif (caching == "redis") -->
+    <PackageReference Include="Vitreous.Caching.Redis" />
+<!--#endif -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../VitreousClean.1.Application/VitreousClean.1.Application.csproj" />
+  </ItemGroup>
+
+</Project>

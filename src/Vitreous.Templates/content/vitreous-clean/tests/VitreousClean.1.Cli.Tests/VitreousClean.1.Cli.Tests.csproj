@@ -1,0 +1,7 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/VitreousClean.1.Cli/VitreousClean.1.Cli.csproj" />
+  </ItemGroup>
+
+</Project>
