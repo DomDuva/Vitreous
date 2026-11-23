@@ -9,6 +9,8 @@ import { FileTree, Steps } from '@astrojs/starlight/components';
 
 Vitreous works the same in a solution split into layers as in a single project. The source generator runs in the host project only, finds the handlers in every layer at build time, and the layers themselves reference nothing but the core `Vitreous` package. This page walks through the sample in [`samples/Vitreous.Sample.DDD*`](https://github.com/DomDuva/Vitreous/tree/main/samples), four projects that build the orders API from [Build your first feature](/Vitreous/getting-started/first-feature/) around an `Order` aggregate.
 
+To start your own solution in these layers, use the [`vitreous-clean`](/Vitreous/guides/templates/#vitreous-clean) template.
+
 ## The projects
 
 <FileTree>

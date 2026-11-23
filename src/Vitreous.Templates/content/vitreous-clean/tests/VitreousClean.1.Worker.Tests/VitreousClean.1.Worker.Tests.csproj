@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- FakeTimeProvider: the tests move the clock instead of waiting for it. -->
+    <PackageReference Include="Microsoft.Extensions.TimeProvider.Testing" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../../src/VitreousClean.1.Worker/VitreousClean.1.Worker.csproj" />
+  </ItemGroup>
+
+</Project>

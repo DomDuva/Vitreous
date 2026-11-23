@@ -1,0 +1,198 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "DomDuva",
+  "classifications": [ "Clean Architecture", "DDD", "Vitreous", "CQRS" ],
+  "identity": "Vitreous.Templates.Clean",
+  "groupIdentity": "Vitreous.Templates.Clean",
+  "name": "Vitreous Clean Architecture solution",
+  "description": "A layered solution built with Vitreous: Domain, Application and Infrastructure, with a minimal API, a console app or a worker on top. The order aggregate, its domain events and an architecture test show the rules at work.",
+  "shortName": "vitreous-clean",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "VitreousClean.1",
+  "preferNameDirectory": true,
+  "guids": [
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B001",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B002",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B003",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B004",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B005",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B006",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B007",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B008",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B009",
+    "A93E6D72-4B18-4C5F-8E20-5D7C1FA4B010"
+  ],
+  "symbols": {
+    "Framework": {
+      "type": "parameter",
+      "description": "The target framework for the projects.",
+      "datatype": "choice",
+      "choices": [
+        { "choice": "net8.0", "description": "Target .NET 8" },
+        { "choice": "net9.0", "description": "Target .NET 9" },
+        { "choice": "net10.0", "description": "Target .NET 10 (LTS)" },
+        { "choice": "net11.0", "description": "Target .NET 11" }
+      ],
+      "enableQuotelessLiterals": true,
+      "replaces": "net10.0",
+      "defaultValue": "net10.0"
+    },
+    "vitreousVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The version of the Vitreous packages to reference. Defaults to the version these templates shipped with.",
+      "replaces": "VITREOUS_VERSION",
+      "defaultValue": "VITREOUS_PACKAGE_VERSION"
+    },
+    "host": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "The app on top of the layers.",
+      "choices": [
+        { "choice": "api", "description": "ASP.NET Core minimal API" },
+        { "choice": "console", "description": "Command-line app on the .NET Generic Host" },
+        { "choice": "worker", "description": "Background service that polls on a timer" }
+      ],
+      "enableQuotelessLiterals": true,
+      "defaultValue": "api"
+    },
+    "validation": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Validate commands and queries with Vitreous.FluentValidation.",
+      "defaultValue": "true"
+    },
+    "devui": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add the Vitreous developer UI at /vitreous (Development only). Only with --host api.",
+      "defaultValue": "true"
+    },
+    "caching": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "Cache query results with Vitreous.Caching.",
+      "choices": [
+        { "choice": "none", "description": "No caching" },
+        { "choice": "memory", "description": "In-process cache (IDistributedCache in memory)" },
+        { "choice": "redis", "description": "Redis, with a compose.yaml to run it locally" }
+      ],
+      "enableQuotelessLiterals": true,
+      "defaultValue": "none"
+    },
+    "tests": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add xUnit test projects for the domain, the application, the architecture and the host.",
+      "defaultValue": "true"
+    },
+    "skipRestore": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Skip the automatic restore of the projects on create.",
+      "defaultValue": "false"
+    },
+    "HttpPort": {
+      "type": "generated",
+      "generator": "port",
+      "parameters": { "low": 5000, "high": 5300 },
+      "replaces": "5080"
+    },
+    "HostApi": { "type": "computed", "value": "(host == api)" },
+    "HostConsole": { "type": "computed", "value": "(host == console)" },
+    "HostWorker": { "type": "computed", "value": "(host == worker)" },
+    "HostProject": {
+      "type": "generated",
+      "generator": "switch",
+      "parameters": {
+        "evaluator": "C++",
+        "cases": [
+          { "condition": "(HostApi)", "value": "Api" },
+          { "condition": "(HostConsole)", "value": "Cli" },
+          { "condition": "(HostWorker)", "value": "Worker" }
+        ]
+      },
+      "replaces": "HOSTPROJECT"
+    },
+    "UseValidation": { "type": "computed", "value": "(validation)" },
+    "UseDevUI": { "type": "computed", "value": "(devui && HostApi)" },
+    "UseOpenApi": { "type": "computed", "value": "(HostApi)" },
+    "UseHost": { "type": "computed", "value": "(!HostApi)" },
+    "UseFakeTime": { "type": "computed", "value": "(HostWorker)" },
+    "UseEfCore": { "type": "computed", "value": "(true)" },
+    "UseCaching": { "type": "computed", "value": "(caching != none)" },
+    "Net8": { "type": "computed", "value": "(Framework == net8.0)" }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!tests)", "exclude": [ "tests/**" ] },
+        { "condition": "(!HostApi)", "exclude": [ "src/VitreousClean.1.Api/**", "tests/VitreousClean.1.Api.Tests/**" ] },
+        { "condition": "(!HostConsole)", "exclude": [ "src/VitreousClean.1.Cli/**", "tests/VitreousClean.1.Cli.Tests/**" ] },
+        { "condition": "(!HostWorker)", "exclude": [ "src/VitreousClean.1.Worker/**", "tests/VitreousClean.1.Worker.Tests/**" ] },
+        { "condition": "(Net8)", "exclude": [ "VitreousClean.1.slnx" ] },
+        { "condition": "(!Net8)", "exclude": [ "VitreousClean.1.sln" ] },
+        { "condition": "(caching != redis)", "exclude": [ "compose.yaml" ] }
+      ]
+    }
+  ],
+  "SpecialCustomOperations": {
+    "**/*.md": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    },
+    "**/*.slnx": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    }
+  },
+  "primaryOutputs": [
+    { "path": "src/VitreousClean.1.Domain/VitreousClean.1.Domain.csproj" },
+    { "path": "src/VitreousClean.1.Application/VitreousClean.1.Application.csproj" },
+    { "path": "src/VitreousClean.1.Infrastructure/VitreousClean.1.Infrastructure.csproj" },
+    { "condition": "(HostApi)", "path": "src/VitreousClean.1.Api/VitreousClean.1.Api.csproj" },
+    { "condition": "(HostConsole)", "path": "src/VitreousClean.1.Cli/VitreousClean.1.Cli.csproj" },
+    { "condition": "(HostWorker)", "path": "src/VitreousClean.1.Worker/VitreousClean.1.Worker.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousClean.1.Domain.Tests/VitreousClean.1.Domain.Tests.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousClean.1.Application.Tests/VitreousClean.1.Application.Tests.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousClean.1.Architecture.Tests/VitreousClean.1.Architecture.Tests.csproj" },
+    { "condition": "(tests && HostApi)", "path": "tests/VitreousClean.1.Api.Tests/VitreousClean.1.Api.Tests.csproj" },
+    { "condition": "(tests && HostConsole)", "path": "tests/VitreousClean.1.Cli.Tests/VitreousClean.1.Cli.Tests.csproj" },
+    { "condition": "(tests && HostWorker)", "path": "tests/VitreousClean.1.Worker.Tests/VitreousClean.1.Worker.Tests.csproj" }
+  ],
+  "postActions": [
+    {
+      "id": "restore",
+      "condition": "(!skipRestore)",
+      "description": "Restore NuGet packages required by these projects.",
+      "manualInstructions": [ { "text": "Run 'dotnet restore'" } ],
+      "actionId": "210D431B-A78B-4D2F-B762-4ED3E3EA9025",
+      "continueOnError": true
+    }
+  ]
+}

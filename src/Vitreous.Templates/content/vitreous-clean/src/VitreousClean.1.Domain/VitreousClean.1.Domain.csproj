@@ -1,0 +1,9 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <!-- For the abstractions only: business rules return Result and Error, and domain events
+         implement INotification. No handlers, no DI registration and no EF Core in here. -->
+    <PackageReference Include="Vitreous" />
+  </ItemGroup>
+
+</Project>

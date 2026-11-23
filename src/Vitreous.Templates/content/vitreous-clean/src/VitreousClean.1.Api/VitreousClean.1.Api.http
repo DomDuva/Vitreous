@@ -1,0 +1,27 @@
+@HostAddress = http://localhost:5080
+
+POST {{HostAddress}}/orders
+Content-Type: application/json
+
+{
+  "customerEmail": "ada@example.com",
+  "currency": "EUR",
+  "lines": [
+    { "product": "Keyboard", "quantity": 2, "unitPrice": 49.90 }
+  ]
+}
+
+###
+
+GET {{HostAddress}}/orders?status=Placed
+
+###
+
+# Paste an id from the responses above.
+@id = 00000000-0000-0000-0000-000000000000
+
+GET {{HostAddress}}/orders/{{id}}
+
+###
+
+POST {{HostAddress}}/orders/{{id}}/ship

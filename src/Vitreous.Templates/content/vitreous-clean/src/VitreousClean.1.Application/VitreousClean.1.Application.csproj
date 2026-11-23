@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <PackageReference Include="Vitreous" />
+    <!-- DbSet and the query operators. The database provider is Infrastructure's business. -->
+    <PackageReference Include="Microsoft.EntityFrameworkCore" />
+<!--#if (UseValidation) -->
+    <PackageReference Include="Vitreous.FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+<!--#endif -->
+<!--#if (UseCaching) -->
+    <!-- ICacheableQuery and IInvalidatesCache. Where results are cached is Infrastructure's business. -->
+    <PackageReference Include="Vitreous.Caching" />
+<!--#endif -->
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../VitreousClean.1.Domain/VitreousClean.1.Domain.csproj" />
+  </ItemGroup>
+
+</Project>

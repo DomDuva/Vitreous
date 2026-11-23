@@ -94,6 +94,7 @@
     "UseOpenApi": { "type": "computed", "value": "(true)" },
     "UseHost": { "type": "computed", "value": "(false)" },
     "UseFakeTime": { "type": "computed", "value": "(false)" },
+    "UseEfCore": { "type": "computed", "value": "(false)" },
     "UseCaching": { "type": "computed", "value": "(caching != none)" },
     "Net8": { "type": "computed", "value": "(Framework == net8.0)" }
   },
