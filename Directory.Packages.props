@@ -26,6 +26,9 @@
     <PackageVersion Include="Microsoft.CodeAnalysis.Analyzers" Version="3.11.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" Version="5.6.0" />
 
+    <!-- Template pack (validates every template.json after build) -->
+    <PackageVersion Include="Microsoft.TemplateEngine.Authoring.Tasks" Version="11.0.100" />
+
     <!-- API docs / tooling -->
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="11.0.0" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.18.0" />

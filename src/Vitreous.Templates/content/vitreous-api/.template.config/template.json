@@ -1,0 +1,155 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "DomDuva",
+  "classifications": [ "Web", "API", "Vitreous", "CQRS" ],
+  "identity": "Vitreous.Templates.Api",
+  "groupIdentity": "Vitreous.Templates.Api",
+  "name": "Vitreous minimal API",
+  "description": "An ASP.NET Core minimal API built with Vitreous, organized in vertical slices: each feature keeps its command or query, validator, handler and endpoint in one file.",
+  "shortName": "vitreous-api",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "VitreousApi.1",
+  "preferNameDirectory": true,
+  "guids": [
+    "6E1D5C0A-2B47-4F38-9A51-3C8E7D2B1A01",
+    "6E1D5C0A-2B47-4F38-9A51-3C8E7D2B1A02",
+    "6E1D5C0A-2B47-4F38-9A51-3C8E7D2B1A03",
+    "6E1D5C0A-2B47-4F38-9A51-3C8E7D2B1A04"
+  ],
+  "symbols": {
+    "Framework": {
+      "type": "parameter",
+      "description": "The target framework for the projects.",
+      "datatype": "choice",
+      "choices": [
+        { "choice": "net8.0", "description": "Target .NET 8" },
+        { "choice": "net9.0", "description": "Target .NET 9" },
+        { "choice": "net10.0", "description": "Target .NET 10 (LTS)" },
+        { "choice": "net11.0", "description": "Target .NET 11" }
+      ],
+      "enableQuotelessLiterals": true,
+      "replaces": "net10.0",
+      "defaultValue": "net10.0"
+    },
+    "vitreousVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The version of the Vitreous packages to reference. Defaults to the version these templates shipped with.",
+      "replaces": "VITREOUS_VERSION",
+      "defaultValue": "VITREOUS_PACKAGE_VERSION"
+    },
+    "validation": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Validate commands and queries with Vitreous.FluentValidation. Not available with --aot, because FluentValidation is not AOT-compatible.",
+      "defaultValue": "true"
+    },
+    "devui": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add the Vitreous developer UI at /vitreous (Development only). Not available with --aot.",
+      "defaultValue": "true"
+    },
+    "caching": {
+      "type": "parameter",
+      "datatype": "choice",
+      "description": "Cache query results with Vitreous.Caching.",
+      "choices": [
+        { "choice": "none", "description": "No caching" },
+        { "choice": "memory", "description": "In-process cache (IDistributedCache in memory)" },
+        { "choice": "redis", "description": "Redis, with a compose.yaml to run it locally" }
+      ],
+      "enableQuotelessLiterals": true,
+      "defaultValue": "none"
+    },
+    "tests": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add an xUnit test project with endpoint and handler tests.",
+      "defaultValue": "true"
+    },
+    "aot": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Publish with Native AOT: CreateSlimBuilder and source-generated JSON. Turns off --validation and --devui.",
+      "defaultValue": "false"
+    },
+    "skipRestore": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Skip the automatic restore of the projects on create.",
+      "defaultValue": "false"
+    },
+    "HttpPort": {
+      "type": "generated",
+      "generator": "port",
+      "parameters": { "low": 5000, "high": 5300 },
+      "replaces": "5080"
+    },
+    "UseValidation": { "type": "computed", "value": "(validation && !aot)" },
+    "UseDevUI": { "type": "computed", "value": "(devui && !aot)" },
+    "UseOpenApi": { "type": "computed", "value": "(true)" },
+    "UseCaching": { "type": "computed", "value": "(caching != none)" },
+    "Net8": { "type": "computed", "value": "(Framework == net8.0)" }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!tests)", "exclude": [ "tests/**" ] },
+        { "condition": "(Net8)", "exclude": [ "VitreousApi.1.slnx" ] },
+        { "condition": "(!Net8)", "exclude": [ "VitreousApi.1.sln" ] },
+        { "condition": "(caching != redis)", "exclude": [ "compose.yaml" ] },
+        { "condition": "(!aot)", "exclude": [ "src/VitreousApi.1/Common/AppJsonContext.cs" ] }
+      ]
+    }
+  ],
+  "SpecialCustomOperations": {
+    "**/*.md": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    },
+    "**/*.slnx": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    }
+  },
+  "primaryOutputs": [
+    { "path": "src/VitreousApi.1/VitreousApi.1.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousApi.1.Tests/VitreousApi.1.Tests.csproj" }
+  ],
+  "postActions": [
+    {
+      "id": "restore",
+      "condition": "(!skipRestore)",
+      "description": "Restore NuGet packages required by these projects.",
+      "manualInstructions": [ { "text": "Run 'dotnet restore'" } ],
+      "actionId": "210D431B-A78B-4D2F-B762-4ED3E3EA9025",
+      "continueOnError": true
+    }
+  ]
+}

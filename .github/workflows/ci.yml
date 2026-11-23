@@ -121,6 +121,118 @@ jobs:
       - name: Run
         run: dotnet bin/Release/${{ matrix.tfm }}/Vitreous.PackageSmokeTest.dll
 
+  # Installs the packed templates and creates a project from each one, outside the repo so its
+  # Directory.Build.props and Directory.Packages.props don't apply. Each project must build with
+  # warnings as errors and pass its own tests. Building also proves the source generator ran:
+  # AddVitreousHandlers() only exists in generated code.
+  templates:
+    name: Template ${{ matrix.template }} (${{ matrix.name }})
+    needs: build-and-test
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Defaults on every target framework
+          - { template: vitreous-api, name: net8.0, args: "-f net8.0" }
+          - { template: vitreous-api, name: net9.0, args: "-f net9.0" }
+          - { template: vitreous-api, name: net10.0, args: "-f net10.0" }
+          - { template: vitreous-api, name: net11.0, args: "-f net11.0" }
+          # Options, on net10.0 (the default)
+          - { template: vitreous-api, name: options off, args: "--validation false --devui false", project: My-Shop.Api }
+          - { template: vitreous-api, name: no tests, args: "--tests false" }
+          - { template: vitreous-api, name: caching memory, args: "--caching memory" }
+          # No Redis server here: cache errors count as misses, so the tests still pass.
+          - { template: vitreous-api, name: caching redis, args: "--caching redis" }
+          - { template: vitreous-api, name: aot, args: "--aot --caching memory", aot: true }
+
+    env:
+      PROJECT: ${{ matrix.project || 'Probe' }}
+
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@v8
+        with:
+          name: ci-packages
+          path: ./artifacts
+
+      # Every SDK, so the tests can run on the runtime the project targets.
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6
+        with:
+          dotnet-version: |
+            8.x
+            9.x
+            10.x
+            11.x
+
+      - name: Install the templates
+        run: dotnet new install ./artifacts/Vitreous.Templates.${{ env.CI_PACKAGE_VERSION }}.nupkg
+
+      - name: Create the project
+        working-directory: ${{ runner.temp }}
+        run: |
+          cat > nuget.config <<EOF
+          <?xml version="1.0" encoding="utf-8"?>
+          <configuration>
+            <packageSources>
+              <clear />
+              <add key="local" value="$GITHUB_WORKSPACE/artifacts" />
+              <add key="nuget.org" value="https://api.nuget.org/v3/index.json" />
+            </packageSources>
+            <packageSourceMapping>
+              <packageSource key="local">
+                <package pattern="Vitreous" />
+                <package pattern="Vitreous.*" />
+              </packageSource>
+              <packageSource key="nuget.org">
+                <package pattern="*" />
+              </packageSource>
+            </packageSourceMapping>
+          </configuration>
+          EOF
+          dotnet new ${{ matrix.template }} -n "$PROJECT" --no-restore \
+            --vitreous-version ${{ env.CI_PACKAGE_VERSION }} ${{ matrix.args }}
+          find "$PROJECT" -type f | sort
+
+      - name: Build
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: dotnet build -warnaserror
+
+      - name: Test
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          if [ -d tests ]; then
+            dotnet test --no-build
+          else
+            echo "Created with --tests false: no test project."
+          fi
+
+      - name: Publish with Native AOT and call the API
+        if: matrix.aot
+        working-directory: ${{ runner.temp }}/${{ env.PROJECT }}
+        run: |
+          dotnet publish "src/$PROJECT" -c Release -r linux-x64 -o out
+          base=http://127.0.0.1:5080
+          ASPNETCORE_URLS=$base "./out/$PROJECT" > app.log 2>&1 &
+          for _ in $(seq 50); do curl -sf $base/todos > /dev/null && break; sleep 0.1; done
+
+          check() { # name expected actual
+            if [ "$2" != "$3" ]; then
+              echo "::error::$1: expected '$2', got '$3'"; cat app.log; exit 1
+            fi
+            echo "ok   $1"
+          }
+          status() { curl -s -o /dev/null -w '%{http_code}' "$@"; }
+
+          id=$(curl -sf -H 'content-type: application/json' -X POST $base/todos -d '{"title":"ship it"}' | jq -r .id)
+          check "create" '"ship it"' "$(curl -sf $base/todos/$id | jq .title)"
+          check "blank title" 400 "$(status -H 'content-type: application/json' -X POST $base/todos -d '{"title":" "}')"
+          check "complete" 204 "$(status -X POST $base/todos/$id/complete)"
+          check "cache invalidated" true "$(curl -sf $base/todos/$id | jq .done)"
+          check "not found" 404 "$(status $base/todos/00000000-0000-0000-0000-000000000000)"
+          check "stream" '["ship it"]' "$(curl -sf $base/todos | jq -c 'map(.title)')"
+
   # Publishes the AOT sample with Native AOT (any trim/AOT warning fails the build, since
   # warnings are errors) and checks every endpoint of the native binary.
   aot:

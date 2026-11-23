@@ -20,6 +20,7 @@
     <Project Path="src/Vitreous.DevUI/Vitreous.DevUI.csproj" />
     <Project Path="src/Vitreous.FluentValidation/Vitreous.FluentValidation.csproj" />
     <Project Path="src/Vitreous.SourceGeneration/Vitreous.SourceGeneration.csproj" />
+    <Project Path="src/Vitreous.Templates/Vitreous.Templates.csproj" />
     <Project Path="src/Vitreous/Vitreous.csproj" />
   </Folder>
   <Folder Name="/tests/">
