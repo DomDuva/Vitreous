@@ -11,7 +11,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Vitreous.Templates`, a `dotnet new` template pack. `dotnet new vitreous-api` creates an ASP.NET Core minimal API organized in vertical slices, with a test project, for `net8.0`, `net9.0`, `net10.0` or `net11.0`. Options: `--validation` (`Vitreous.FluentValidation`), `--devui`, `--caching none|memory|redis`, `--tests` and `--aot` (Native AOT). Generated projects reference the Vitreous version the templates shipped with, or `--vitreous-version`. CI creates the template with each framework and the main option combinations, then builds it with warnings as errors and runs its tests. The AOT variant is also published and called over HTTP. See [Project templates](https://domduva.github.io/Vitreous/guides/templates/).
+- `Vitreous.Templates`, a `dotnet new` template pack. `dotnet new vitreous-api` creates an ASP.NET Core minimal API organized in vertical slices, with a test project, for `net8.0`, `net9.0`, `net10.0` or `net11.0`. Options: `--validation` (`Vitreous.FluentValidation`), `--devui`, `--caching none|memory|redis`, `--tests` and `--aot` (Native AOT). Generated projects reference the Vitreous version the templates shipped with, or `--vitreous-version`. CI creates every template with each framework and the main option combinations, then builds it with warnings as errors and runs its tests. The AOT variant is also published and called over HTTP. See [Project templates](https://domduva.github.io/Vitreous/guides/templates/).
+- `dotnet new vitreous-console` creates a command-line app on the .NET Generic Host: it sends each command or query from a scope, and a failed `Result` becomes an exit code. Options: `--validation` and `--tests`.
+- `dotnet new vitreous-worker` creates a worker service: a `BackgroundService` polls on a `PeriodicTimer` and opens a scope per unit of work, survives failed and throwing handlers, stops cleanly, and is tested with a fake `TimeProvider`. Options: `--validation`, `--caching none|memory|redis` and `--tests`.
 
 ### Changed
 

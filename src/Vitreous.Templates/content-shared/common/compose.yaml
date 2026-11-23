@@ -1,4 +1,4 @@
-# Local Redis for --caching redis: docker compose up -d
+# Local Redis: docker compose up -d
 services:
   redis:
     image: redis:7-alpine

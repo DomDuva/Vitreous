@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/VitreousConsole.1/VitreousConsole.1.csproj" />
+  </Folder>
+<!--#if (tests) -->
+  <Folder Name="/tests/">
+    <Project Path="tests/VitreousConsole.1.Tests/VitreousConsole.1.Tests.csproj" />
+  </Folder>
+<!--#endif -->
+</Solution>

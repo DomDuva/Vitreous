@@ -20,11 +20,19 @@ cd Shop
 dotnet run --project src/Shop
 ```
 
+| Template | Creates |
+|---|---|
+| [`vitreous-api`](#vitreous-api) | An ASP.NET Core minimal API |
+| [`vitreous-console`](#vitreous-console) | A command-line app on the .NET Generic Host |
+| [`vitreous-worker`](#vitreous-worker) | A background service that polls on a timer |
+
+All of them are organized in **vertical slices**: each feature keeps its command or query, validator, handler and entry point (an endpoint, or a verb on the command line) in one file, so you read, change or delete a feature in one place.
+
 Each generated project has a `README.md` that explains its layout, how to run and test it, and where the next feature goes.
 
 ## `vitreous-api`
 
-An ASP.NET Core minimal API organized in **vertical slices**: each feature keeps its command or query, validator, handler and endpoint in one file, so you read, change or delete a feature in one place.
+An ASP.NET Core minimal API.
 
 ```text
 Shop/
@@ -48,18 +56,82 @@ Shop/
 
 The todos are kept in memory, so the project runs with no setup. Handlers return failures as an `Error`, and `ToHttpResult()` turns them into Problem Details responses. A validation failure becomes a 400 with the messages per property, as described in [Validation](/Vitreous/guides/validation/) and [HTTP error mapping](/Vitreous/guides/http-error-mapping/). In Development, the app serves the OpenAPI document at `/openapi/v1.json`, the Scalar API reference at `/scalar/v1` and the [developer UI](/Vitreous/guides/developer-ui/) at `/vitreous`.
 
+## `vitreous-console`
+
+A command-line app on the .NET Generic Host, with the same todos.
+
+```sh
+dotnet new vitreous-console -n Shop.Cli
+cd Shop.Cli
+dotnet run --project src/Shop.Cli -- add Buy milk
+dotnet run --project src/Shop.Cli -- list
+```
+
+```text
+src/Shop.Cli/
+  Program.cs                  registration, the scope and Ctrl+C
+  appsettings.json
+  Common/
+    ExitCodes.cs              ToExitCode(): Error.Code → exit code, errors to stderr
+    CliOutput.cs              stdout and stderr, replaced in the tests
+    LoggingBehavior.cs        an open-generic pipeline behavior
+  Features/Todos/
+    TodoCli.cs                maps the arguments to the verbs
+    CreateTodo.cs             command + validator + handler + verb
+    GetTodo.cs, ListTodos.cs, CompleteTodo.cs, TodoCompleted.cs
+    TodoStore.cs              keeps the todos in a JSON file
+tests/Shop.Cli.Tests/         whole command lines, and handler tests
+```
+
+Handlers are scoped, and so is `ISender`. A console app has no requests to give it a scope, so `Program.cs` creates one and sends from it. Results go to stdout, errors and logs to stderr, and the exit code is 0 on success, 1 when a handler returns an error, 2 for wrong arguments or invalid input, and 130 after Ctrl+C. The arguments are matched with a list pattern, so there is no parsing library to learn or replace.
+
+## `vitreous-worker`
+
+A worker service that sends reminders when they are due.
+
+```sh
+dotnet new vitreous-worker -n Shop.Jobs
+cd Shop.Jobs
+dotnet run --project src/Shop.Jobs
+```
+
+```text
+src/Shop.Jobs/
+  Program.cs                  registration, and sample reminders for the first run
+  appsettings.json            Reminders:Interval
+  Common/
+    LoggingBehavior.cs        an open-generic pipeline behavior
+  Features/Reminders/
+    ReminderWorker.cs         BackgroundService: the timer, and a scope per unit of work
+    GetDueReminders.cs        query
+    GetRecipient.cs           query
+    SendReminder.cs           command + validator + handler, publishes ReminderSent
+    ReminderSent.cs           notification and its handler
+    ReminderStore.cs          in-memory storage
+tests/Shop.Jobs.Tests/        worker tests with a fake clock, and handler tests
+```
+
+A hosted service is a singleton, so it can't take the scoped `ISender` in its constructor. `ReminderWorker` takes an `IServiceScopeFactory` and opens a scope for each query and command it sends:
+
+```csharp
+await using var scope = scopes.CreateAsyncScope();
+await work(scope.ServiceProvider.GetRequiredService<ISender>());
+```
+
+A failed `Result` is logged and tried again on the next tick, and an unexpected exception is logged instead of stopping the host. On Ctrl+C or SIGTERM, the handler that is running gets a cancelled token and nothing new starts. The timer and the handlers read the time from `TimeProvider`, so the tests move the clock forward instead of waiting.
+
 ## Options
 
-| Option | Values | Default | What it does |
-|---|---|---|---|
-| `-f`, `--framework` | `net8.0` `net9.0` `net10.0` `net11.0` | `net10.0` | The target framework. Package versions follow it, e.g. `Microsoft.AspNetCore.OpenApi` 9.x on `net9.0`. On `net8.0`, which predates `AddOpenApi()`, Swashbuckle generates the OpenAPI document, and the solution is a `.sln` because the .NET 8 SDK can't read `.slnx`. |
-| `--validation` | `true` `false` | `true` | Adds `Vitreous.FluentValidation` and a validator for `CreateTodoCommand`. |
-| `--devui` | `true` `false` | `true` | Adds `Vitreous.DevUI`, which is on in Development only. |
-| `--caching` | `none` `memory` `redis` | `none` | `GetTodoQuery` becomes an `ICacheableQuery`, and `CompleteTodoCommand` evicts it. `memory` uses the in-memory `IDistributedCache`. `redis` uses `Vitreous.Caching.Redis`, reads the `Redis` connection string, and adds a `compose.yaml` that runs Redis locally. See [Caching](/Vitreous/guides/caching/). |
-| `--tests` | `true` `false` | `true` | Adds the xUnit test project. |
-| `--aot` | `true` `false` | `false` | Publishes with Native AOT: `CreateSlimBuilder`, `PublishAot` and a source-generated `JsonSerializerContext` for every type an endpoint reads or writes. See [Native AOT](/Vitreous/guides/native-aot/). |
-| `--vitreous-version` | a version | the template pack's own | The version of the Vitreous packages to reference. |
-| `--no-restore` | | | Skips the restore after the project is created. |
+| Option | Templates | Values | Default | What it does |
+|---|---|---|---|---|
+| `-f`, `--framework` | all | `net8.0` `net9.0` `net10.0` `net11.0` | `net10.0` | The target framework. Package versions follow it, e.g. `Microsoft.Extensions.Hosting` 9.x on `net9.0`. On `net8.0`, the solution is a `.sln` because the .NET 8 SDK can't read `.slnx`, and in `vitreous-api` Swashbuckle generates the OpenAPI document, because `AddOpenApi()` arrived in .NET 9. |
+| `--validation` | all | `true` `false` | `true` | Adds `Vitreous.FluentValidation` and a validator. |
+| `--caching` | `vitreous-api`, `vitreous-worker` | `none` `memory` `redis` | `none` | Caches a query (`GetTodoQuery` or `GetRecipientQuery` becomes an `ICacheableQuery`). `memory` uses the in-memory `IDistributedCache`. `redis` uses `Vitreous.Caching.Redis`, reads the `Redis` connection string, and adds a `compose.yaml` that runs Redis locally. See [Caching](/Vitreous/guides/caching/). |
+| `--devui` | `vitreous-api` | `true` `false` | `true` | Adds `Vitreous.DevUI`, which is on in Development only. |
+| `--aot` | `vitreous-api` | `true` `false` | `false` | Publishes with Native AOT: `CreateSlimBuilder`, `PublishAot` and a source-generated `JsonSerializerContext` for every type an endpoint reads or writes. See [Native AOT](/Vitreous/guides/native-aot/). |
+| `--tests` | all | `true` `false` | `true` | Adds the xUnit test project. |
+| `--vitreous-version` | all | a version | the template pack's own | The version of the Vitreous packages to reference. |
+| `--no-restore` | all | | | Skips the restore after the project is created. |
 
 <Aside type="note">
 `--aot` turns `--validation` and `--devui` off: FluentValidation and the developer UI aren't AOT-compatible. Without validation, `CreateTodoHandler` checks the title itself and returns `Error.Validation`.
@@ -69,6 +141,7 @@ The todos are kept in memory, so the project runs with no setup. Handlers return
 dotnet new vitreous-api -n Shop -f net8.0
 dotnet new vitreous-api -n Shop --caching redis
 dotnet new vitreous-api -n Shop --aot --caching memory
+dotnet new vitreous-worker -n Shop.Jobs --caching redis
 ```
 
 ## Versions

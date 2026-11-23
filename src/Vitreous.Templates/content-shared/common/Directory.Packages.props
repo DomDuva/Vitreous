@@ -21,6 +21,31 @@
     <PackageVersion Include="Vitreous.DevUI" Version="VITREOUS_VERSION" />
 <!--#endif -->
   </ItemGroup>
+<!--#if (UseHost) -->
+
+  <ItemGroup>
+<!--#if (Framework == "net8.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="8.0.1" />
+<!--#elseif (Framework == "net9.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="9.0.23" />
+<!--#elseif (Framework == "net10.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="10.0.15" />
+<!--#else -->
+    <PackageVersion Include="Microsoft.Extensions.Hosting" Version="11.0.0" />
+<!--#endif -->
+<!--#if (caching == "memory") -->
+<!--#if (Framework == "net8.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="8.0.1" />
+<!--#elseif (Framework == "net9.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="9.0.23" />
+<!--#elseif (Framework == "net10.0") -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="10.0.15" />
+<!--#else -->
+    <PackageVersion Include="Microsoft.Extensions.Caching.Memory" Version="11.0.0" />
+<!--#endif -->
+<!--#endif -->
+  </ItemGroup>
+<!--#endif -->
 <!--#if (UseOpenApi) -->
 
   <ItemGroup>
@@ -44,6 +69,7 @@
     <!-- mtp-off: runs under the classic dotnet test (VSTest) on every SDK from 8 to 11. -->
     <PackageVersion Include="xunit.v3.mtp-off" Version="4.0.3" />
     <PackageVersion Include="xunit.runner.visualstudio" Version="4.0.1" />
+<!--#if (!UseHost) -->
 <!--#if (Framework == "net8.0") -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.34" />
 <!--#elseif (Framework == "net9.0") -->
@@ -52,6 +78,18 @@
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.15" />
 <!--#else -->
     <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="11.0.0" />
+<!--#endif -->
+<!--#endif -->
+<!--#if (UseFakeTime) -->
+<!--#if (Framework == "net8.0") -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="8.10.0" />
+<!--#elseif (Framework == "net9.0") -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="9.10.0" />
+<!--#elseif (Framework == "net10.0") -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.1" />
+<!--#else -->
+    <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="11.0.1" />
+<!--#endif -->
 <!--#endif -->
   </ItemGroup>
 <!--#endif -->

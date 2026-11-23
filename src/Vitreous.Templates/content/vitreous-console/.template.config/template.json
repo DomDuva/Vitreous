@@ -1,0 +1,127 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "DomDuva",
+  "classifications": [ "Console", "CLI", "Vitreous", "CQRS" ],
+  "identity": "Vitreous.Templates.Console",
+  "groupIdentity": "Vitreous.Templates.Console",
+  "name": "Vitreous console app",
+  "description": "A command-line app on the .NET Generic Host built with Vitreous: each verb sends a command or query from a scope, and a failed Result becomes an exit code.",
+  "shortName": "vitreous-console",
+  "tags": {
+    "language": "C#",
+    "type": "project"
+  },
+  "sourceName": "VitreousConsole.1",
+  "preferNameDirectory": true,
+  "guids": [
+    "8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F501",
+    "8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F502",
+    "8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F503",
+    "8A4F2E1B-5C93-4D07-B6E2-71D0C9A3F504"
+  ],
+  "symbols": {
+    "Framework": {
+      "type": "parameter",
+      "description": "The target framework for the projects.",
+      "datatype": "choice",
+      "choices": [
+        { "choice": "net8.0", "description": "Target .NET 8" },
+        { "choice": "net9.0", "description": "Target .NET 9" },
+        { "choice": "net10.0", "description": "Target .NET 10 (LTS)" },
+        { "choice": "net11.0", "description": "Target .NET 11" }
+      ],
+      "enableQuotelessLiterals": true,
+      "replaces": "net10.0",
+      "defaultValue": "net10.0"
+    },
+    "vitreousVersion": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The version of the Vitreous packages to reference. Defaults to the version these templates shipped with.",
+      "replaces": "VITREOUS_VERSION",
+      "defaultValue": "VITREOUS_PACKAGE_VERSION"
+    },
+    "validation": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Validate commands and queries with Vitreous.FluentValidation.",
+      "defaultValue": "true"
+    },
+    "tests": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add an xUnit test project with CLI and handler tests.",
+      "defaultValue": "true"
+    },
+    "skipRestore": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Skip the automatic restore of the projects on create.",
+      "defaultValue": "false"
+    },
+    "caching": { "type": "generated", "generator": "constant", "parameters": { "value": "none" } },
+    "UseValidation": { "type": "computed", "value": "(validation)" },
+    "UseDevUI": { "type": "computed", "value": "(false)" },
+    "UseOpenApi": { "type": "computed", "value": "(false)" },
+    "UseHost": { "type": "computed", "value": "(true)" },
+    "UseFakeTime": { "type": "computed", "value": "(false)" },
+    "UseCaching": { "type": "computed", "value": "(false)" },
+    "Net8": { "type": "computed", "value": "(Framework == net8.0)" }
+  },
+  "sources": [
+    {
+      "modifiers": [
+        { "condition": "(!tests)", "exclude": [ "tests/**" ] },
+        { "condition": "(Net8)", "exclude": [ "VitreousConsole.1.slnx" ] },
+        { "condition": "(!Net8)", "exclude": [ "VitreousConsole.1.sln" ] },
+        { "exclude": [ "compose.yaml" ] }
+      ]
+    }
+  ],
+  "SpecialCustomOperations": {
+    "**/*.md": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    },
+    "**/*.slnx": {
+      "operations": [
+        {
+          "type": "conditional",
+          "configuration": {
+            "actionableIf": [ "<!--#if" ],
+            "actionableElse": [ "<!--#else" ],
+            "actionableElseif": [ "<!--#elseif" ],
+            "endif": [ "<!--#endif" ],
+            "trim": true,
+            "wholeLine": true
+          }
+        }
+      ]
+    }
+  },
+  "primaryOutputs": [
+    { "path": "src/VitreousConsole.1/VitreousConsole.1.csproj" },
+    { "condition": "(tests)", "path": "tests/VitreousConsole.1.Tests/VitreousConsole.1.Tests.csproj" }
+  ],
+  "postActions": [
+    {
+      "id": "restore",
+      "condition": "(!skipRestore)",
+      "description": "Restore NuGet packages required by these projects.",
+      "manualInstructions": [ { "text": "Run 'dotnet restore'" } ],
+      "actionId": "210D431B-A78B-4D2F-B762-4ED3E3EA9025",
+      "continueOnError": true
+    }
+  ]
+}
