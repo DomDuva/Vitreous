@@ -1,0 +1,21 @@
+@HostAddress = http://localhost:5080
+
+POST {{HostAddress}}/todos
+Content-Type: application/json
+
+{ "title": "Try Vitreous" }
+
+###
+
+GET {{HostAddress}}/todos
+
+###
+
+# Paste an id from the responses above.
+@id = 00000000-0000-0000-0000-000000000000
+
+GET {{HostAddress}}/todos/{{id}}
+
+###
+
+POST {{HostAddress}}/todos/{{id}}/complete

@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `Vitreous.Templates`, a `dotnet new` template pack. `dotnet new vitreous-api` creates an ASP.NET Core minimal API organized in vertical slices, with a test project, for `net8.0`, `net9.0`, `net10.0` or `net11.0`. Options: `--validation` (`Vitreous.FluentValidation`), `--devui`, `--caching none|memory|redis`, `--tests` and `--aot` (Native AOT). Generated projects reference the Vitreous version the templates shipped with, or `--vitreous-version`. CI creates the template with each framework and the main option combinations, then builds it with warnings as errors and runs its tests. The AOT variant is also published and called over HTTP. See [Project templates](https://domduva.github.io/Vitreous/guides/templates/).
+
 ### Changed
 
 - The samples no longer use repositories: handlers use EF Core directly, since a `DbContext` already is a unit of work and each `DbSet` a repository. `Vitreous.Sample`, `Vitreous.Sample.Caching` and `Vitreous.Sample.Redis` store orders through an `OrdersDbContext` on a SQLite in-memory database. In `Vitreous.Sample.DDD`, Application's handlers use an `IAppDbContext` that Infrastructure's `AppDbContext` implements, and `AppDbContext.SaveChangesAsync` publishes the saved entities' domain events (`IHasDomainEvents`), replacing `IOrderRepository` and `InMemoryOrderRepository`. `Vitreous.Sample.Aot` is unchanged.

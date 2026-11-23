@@ -1,0 +1,39 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+<!--#if (aot) -->
+  <PropertyGroup>
+    <!-- Native AOT: dotnet publish compiles to a single native executable. Trim and AOT
+         warnings are errors (TreatWarningsAsErrors), so anything unsafe fails the build. -->
+    <PublishAot>true</PublishAot>
+    <InvariantGlobalization>true</InvariantGlobalization>
+  </PropertyGroup>
+
+<!--#endif -->
+  <ItemGroup>
+    <PackageReference Include="Vitreous" />
+    <!-- Generates AddVitreousHandlers() and the dispatcher at compile time. Build-time only, so
+         PrivateAssets keeps it out of projects that reference this one (the tests). -->
+    <PackageReference Include="Vitreous.SourceGeneration" PrivateAssets="all" />
+<!--#if (UseValidation) -->
+    <PackageReference Include="Vitreous.FluentValidation" />
+    <PackageReference Include="FluentValidation.DependencyInjectionExtensions" />
+<!--#endif -->
+<!--#if (caching == "memory") -->
+    <PackageReference Include="Vitreous.Caching" />
+<!--#elseif (caching == "redis") -->
+    <PackageReference Include="Vitreous.Caching.Redis" />
+<!--#endif -->
+<!--#if (UseDevUI) -->
+    <PackageReference Include="Vitreous.DevUI" />
+<!--#endif -->
+<!--#if (UseOpenApi) -->
+<!--#if (Net8) -->
+    <PackageReference Include="Swashbuckle.AspNetCore.SwaggerGen" />
+<!--#else -->
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" />
+<!--#endif -->
+    <PackageReference Include="Scalar.AspNetCore" />
+<!--#endif -->
+  </ItemGroup>
+
+</Project>

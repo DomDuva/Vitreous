@@ -15,6 +15,7 @@ sidebar:
 | [`Vitreous.Caching`](https://www.nuget.org/packages/Vitreous.Caching) | Pipeline behaviors for `IDistributedCache`-backed query caching |
 | [`Vitreous.Caching.Redis`](https://www.nuget.org/packages/Vitreous.Caching.Redis) | Redis backend with tag-based bulk invalidation |
 | [`Vitreous.FluentValidation`](https://www.nuget.org/packages/Vitreous.FluentValidation) | Pipeline behaviors that run FluentValidation validators before the handler |
+| [`Vitreous.Templates`](https://www.nuget.org/packages/Vitreous.Templates) | `dotnet new` templates for a new project. See [Project templates](/Vitreous/guides/templates/) |
 
 Every runtime package targets .NET 8, 9, 10 and 11.
 
@@ -25,6 +26,10 @@ Every runtime package targets .NET 8, 9, 10 and 11.
 - **Optional:** `Vitreous.DevUI`, `Vitreous.Caching` or `Vitreous.Caching.Redis`, and `Vitreous.FluentValidation`, when you use those features.
 
 ## Install
+
+Starting a new project? `dotnet new install Vitreous.Templates`, then `dotnet new vitreous-api -n MyApp`, creates one with everything below already set up. See [Project templates](/Vitreous/guides/templates/).
+
+To add Vitreous to an existing project:
 
 ```sh
 dotnet add package Vitreous

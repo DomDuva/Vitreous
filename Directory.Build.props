@@ -31,7 +31,7 @@
     PublicAPI.Unshipped.txt; each release moves it to PublicAPI.Shipped.txt. The analyzer
     package adds both files as AdditionalFiles itself.
   -->
-  <ItemGroup Condition="'$(IsPackable)' == 'true' and '$(OutputType)' == 'Library' and '$(IsRoslynComponent)' != 'true'">
+  <ItemGroup Condition="'$(IsPackable)' == 'true' and '$(OutputType)' == 'Library' and '$(IsRoslynComponent)' != 'true' and '$(PackageType)' != 'Template'">
     <PackageReference Include="Microsoft.CodeAnalysis.PublicApiAnalyzers" PrivateAssets="all" />
   </ItemGroup>
 </Project>

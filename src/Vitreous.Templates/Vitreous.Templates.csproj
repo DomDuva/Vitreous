@@ -1,0 +1,92 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The dotnet new template pack. Nothing is compiled: the package carries the templates under
+    content/, staged at pack time (see StageTemplates below).
+
+      content/<template>/       one folder per template, with .template.config/template.json
+      content-shared/common/    copied into the root of every template while staging
+
+    The template content is not part of Vitreous.slnx and can't be built in the repo: it references
+    the Vitreous packages by version. CI installs the packed templates, creates every template and
+    builds it (the templates job in ci.yml).
+  -->
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <PackageId>Vitreous.Templates</PackageId>
+    <Title>Vitreous templates</Title>
+    <Description>dotnet new templates for Vitreous: a minimal API with vertical slices, Vitreous.FluentValidation, caching and the developer UI.</Description>
+    <PackageTags>dotnet-new;templates;mediator;cqrs;vertical-slices;minimal-api</PackageTags>
+    <IsPackable>true</IsPackable>
+    <PackageType>Template</PackageType>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <IncludeSymbols>false</IncludeSymbols>
+    <NoDefaultExcludes>true</NoDefaultExcludes>
+    <EnableDefaultItems>false</EnableDefaultItems>
+    <!-- NU5128: a template package has no lib/ folder for its target framework, on purpose. -->
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+    <!-- Microsoft.TemplateEngine.Authoring.Tasks checks every template.json after build. -->
+    <ValidateTemplatesPath>$(MSBuildProjectDirectory)/content</ValidateTemplatesPath>
+    <LocalizeTemplates>false</LocalizeTemplates>
+    <TemplateStagingDir>$(MSBuildProjectDirectory)/$(BaseIntermediateOutputPath)templates/</TemplateStagingDir>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.TemplateEngine.Authoring.Tasks" PrivateAssets="all" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Include="content/**;content-shared/**" Exclude="content/**/bin/**;content/**/obj/**" />
+    <None Include="../../README.md" Pack="true" PackagePath="/" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetsForTfmSpecificContentInPackage>$(TargetsForTfmSpecificContentInPackage);StageTemplates</TargetsForTfmSpecificContentInPackage>
+  </PropertyGroup>
+
+  <!--
+    Copies content/ to obj/templates/, adds the content-shared/common/ files to every template,
+    and writes the package version into each template.json (VITREOUS_PACKAGE_VERSION, the
+    default of the vitreous-version parameter). Generated projects then reference the exact
+    Vitreous release the templates shipped with. Runs on dotnet pack, with or without a build.
+  -->
+  <Target Name="StageTemplates" DependsOnTargets="MinVer">
+    <RemoveDir Directories="$(TemplateStagingDir)" />
+
+    <ItemGroup>
+      <_TemplateFile Include="content/**" Exclude="content/**/bin/**;content/**/obj/**" />
+      <_TemplateName Include="$([System.IO.Directory]::GetDirectories('$(MSBuildProjectDirectory)/content'))" />
+      <_SharedFile Include="content-shared/common/**" />
+      <!-- One item per (template, shared file) pair: batching over _TemplateName. -->
+      <_SharedCopy Include="@(_SharedFile)" Template="%(_TemplateName.Filename)" />
+    </ItemGroup>
+
+    <Copy SourceFiles="@(_TemplateFile)"
+          DestinationFiles="@(_TemplateFile->'$(TemplateStagingDir)%(RecursiveDir)%(Filename)%(Extension)')" />
+    <Copy SourceFiles="@(_SharedCopy)"
+          DestinationFiles="@(_SharedCopy->'$(TemplateStagingDir)%(Template)/%(RecursiveDir)%(Filename)%(Extension)')" />
+
+    <ItemGroup>
+      <_TemplateJson Include="$(TemplateStagingDir)*/.template.config/template.json" />
+    </ItemGroup>
+
+    <!--
+      Escape: the file's own ; and % must reach WriteLinesToFile as text, not as item syntax.
+      MSBuild still turns \ into / on Linux and macOS, so template.json must not contain one:
+      compare choice symbols with quoteless literals (enableQuotelessLiterals) instead of \"...\".
+    -->
+    <Error Condition="$([System.IO.File]::ReadAllText('%(_TemplateJson.FullPath)').Contains('\'))"
+           Text="%(_TemplateJson.FullPath) contains a backslash, which staging would corrupt. Use quoteless literals in conditions." />
+    <WriteLinesToFile File="%(_TemplateJson.FullPath)"
+                      Lines="$([MSBuild]::Escape($([System.IO.File]::ReadAllText('%(_TemplateJson.FullPath)').Replace('VITREOUS_PACKAGE_VERSION', '$(PackageVersion)'))))"
+                      Overwrite="true" />
+
+    <Error Condition="'$(PackageVersion)' == ''" Text="PackageVersion is empty; the templates would reference no Vitreous version." />
+
+    <ItemGroup>
+      <_StagedFile Include="$(TemplateStagingDir)**" />
+      <TfmSpecificPackageFile Include="@(_StagedFile)" PackagePath="content/%(RecursiveDir)%(Filename)%(Extension)" />
+    </ItemGroup>
+  </Target>
+
+</Project>

@@ -1,0 +1,18 @@
+{
+  "$schema": "http://json.schemastore.org/dotnetcli.host",
+  "symbolInfo": {
+    "Framework": { "longName": "framework", "shortName": "f" },
+    "vitreousVersion": { "longName": "vitreous-version", "shortName": "" },
+    "validation": { "longName": "validation", "shortName": "" },
+    "devui": { "longName": "devui", "shortName": "" },
+    "caching": { "longName": "caching", "shortName": "" },
+    "tests": { "longName": "tests", "shortName": "" },
+    "aot": { "longName": "aot", "shortName": "" },
+    "skipRestore": { "longName": "no-restore", "shortName": "" }
+  },
+  "usageExamples": [
+    "-n Shop",
+    "-n Shop --caching redis",
+    "-n Shop --aot"
+  ]
+}

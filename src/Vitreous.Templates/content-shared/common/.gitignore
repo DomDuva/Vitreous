@@ -1,0 +1,21 @@
+# Build output
+bin/
+obj/
+artifacts/
+
+# Test results and coverage
+TestResults/
+*.trx
+coverage*.xml
+
+# IDEs
+.vs/
+.idea/
+*.user
+*.suo
+
+# Local settings and secrets
+appsettings.*.local.json
+*.db
+*.db-shm
+*.db-wal

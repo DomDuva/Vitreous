@@ -1,0 +1,6 @@
+# Local Redis for --caching redis: docker compose up -d
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
