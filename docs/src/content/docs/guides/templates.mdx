@@ -1,6 +1,6 @@
 ---
 title: Project templates
-description: Start a new Vitreous project with dotnet new, and what each template option adds.
+description: Start a new Vitreous project with dotnet new, add commands, queries and behaviors to it, and what each template option does.
 sidebar:
   label: Project templates
   order: 0
@@ -26,8 +26,9 @@ dotnet run --project src/Shop
 | [`vitreous-console`](#vitreous-console) | A command-line app on the .NET Generic Host |
 | [`vitreous-worker`](#vitreous-worker) | A background service that polls on a timer |
 | [`vitreous-clean`](#vitreous-clean) | A layered solution: Domain, Application, Infrastructure and one of the hosts above |
+| [`vitreous-command`, `-query`, `-notification`, `-behavior`](#item-templates) | A message and its handler, or a pipeline behavior, in an existing project |
 
-The first three are organized in **vertical slices**: each feature keeps its command or query, validator, handler and entry point (an endpoint, or a verb on the command line) in one file, so you read, change or delete a feature in one place. `vitreous-clean` is organized in **layers**, so the business rules can't depend on the database or the app around them. Start with slices unless you have business rules worth protecting: one project is less to navigate, and Vitreous works the same in both.
+The API, the console app and the worker are organized in **vertical slices**: each feature keeps its command or query, validator, handler and entry point (an endpoint, or a verb on the command line) in one file, so you read, change or delete a feature in one place. `vitreous-clean` is organized in **layers**, so the business rules can't depend on the database or the app around them. Start with slices unless you have business rules worth protecting: one project is less to navigate, and Vitreous works the same in both.
 
 Each generated project has a `README.md` that explains its layout, how to run and test it, and where the next feature goes.
 
@@ -199,6 +200,64 @@ dotnet new vitreous-api -n Shop --aot --caching memory
 dotnet new vitreous-worker -n Shop.Jobs --caching redis
 dotnet new vitreous-clean -n Shop --host console -f net9.0
 ```
+
+## Item templates
+
+Item templates add a file to a project that already uses Vitreous, whether a template created it or not. Run them in the folder the file belongs in:
+
+```sh
+cd src/Shop/Features/Orders
+dotnet new vitreous-command -n PlaceOrder --result Guid --validation
+```
+
+```csharp title="src/Shop/Features/Orders/PlaceOrder.cs"
+using FluentValidation;
+using Vitreous;
+using Vitreous.Abstractions;
+
+namespace Shop.Features.Orders;
+
+public sealed record PlaceOrderCommand : ICommand<Guid>;
+
+public sealed class PlaceOrderValidator : AbstractValidator<PlaceOrderCommand>
+{
+    public PlaceOrderValidator()
+    {
+        // RuleFor(c => c.Name).NotEmpty();
+    }
+}
+
+public sealed class PlaceOrderHandler : ICommandHandler<PlaceOrderCommand, Guid>
+{
+    public ValueTask<Result<Guid>> Handle(PlaceOrderCommand command, CancellationToken ct = default)
+    {
+        // Return the value, or an Error such as Error.NotFound("...") when it fails.
+        throw new NotImplementedException();
+    }
+}
+```
+
+| Template | `-n` | File | Creates |
+|---|---|---|---|
+| `vitreous-command` | `PlaceOrder` | `PlaceOrder.cs` | `PlaceOrderCommand` and `PlaceOrderHandler` |
+| `vitreous-query` | `GetOrder` | `GetOrder.cs` | `GetOrderQuery` and `GetOrderHandler` |
+| `vitreous-notification` | `OrderPlaced` | `OrderPlaced.cs` | `OrderPlaced` and `OrderPlacedHandler` |
+| `vitreous-behavior` | `Retry` | `RetryBehavior.cs` | `RetryBehavior<TMessage, TResult>`, for every command and query |
+
+`-n PlaceOrderCommand` gives the same result as `-n PlaceOrder`. The source generator registers the handler at build time. A [pipeline behavior](/Vitreous/concepts/pipeline-behaviors/) has to be added, because the order matters: `services.AddVitreousBehavior(typeof(RetryBehavior<,>))`.
+
+| Option | Templates | Default | What it does |
+|---|---|---|---|
+| `--result <type>` | command, query | | The type the message returns. Without it, a command returns no value (`ICommand`), and a query gets an empty `GetOrderResponse` record to fill in. Quote a generic type: `--result "List<OrderDto>"`. |
+| `--validation` | command, query | `false` | Adds a validator. The project needs `Vitreous.FluentValidation`, see [Validation](/Vitreous/guides/validation/). |
+| `--handler` | notification | `true` | `--handler false` creates the notification alone, for a domain event whose handlers are in another layer. |
+| `--namespace <name>` | all | from the folder | The namespace. The default is the project's root namespace plus the folder you run the command in. |
+
+<Aside type="note">
+The folder is the one you run the command in, not the one `-o` points at: with `-o`, pass `--namespace` too. The .NET 8 SDK doesn't tell templates where they run, so there the default is the project's root namespace.
+</Aside>
+
+The item templates only run inside a restored C# project. `dotnet new install` says so when you run it anywhere else, as "might not work because their constraints are not met", and `dotnet new list` hides them there.
 
 ## Versions
 

@@ -9,7 +9,7 @@ using VitreousClean._1.Domain.Orders;
 
 namespace VitreousClean._1.Application.Orders;
 
-// A use case is a message and its handler, in one file. Add the next one with:
+// A use case is a message and its handler, in one file. Add the next one from its folder with:
 //   dotnet new vitreous-command -n <Name>
 
 public sealed record PlaceOrderCommand(

@@ -1,0 +1,124 @@
+{
+  "$schema": "http://json.schemastore.org/template",
+  "author": "DomDuva",
+  "classifications": [ "Vitreous", "CQRS" ],
+  "identity": "Vitreous.Templates.Query",
+  "groupIdentity": "Vitreous.Templates.Query",
+  "name": "Vitreous query",
+  "description": "A Vitreous query and its handler, in one file. The handler throws until you write it.",
+  "shortName": "vitreous-query",
+  "tags": {
+    "language": "C#",
+    "type": "item"
+  },
+  "defaultName": "Sample",
+  "preferDefaultName": true,
+  "constraints": {
+    "csharp-only": {
+      "type": "project-capability",
+      "args": "CSharp"
+    }
+  },
+  "forms": {
+    "baseName": { "identifier": "chain", "steps": [ "safe_name", "withoutSuffix" ] },
+    "withoutSuffix": { "identifier": "replace", "pattern": "(?<=.)Query$", "replacement": "" }
+  },
+  "symbols": {
+    "result": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The type the query returns, such as OrderDto. Without it, the file gets a <name>Response record.",
+      "defaultValue": ""
+    },
+    "validation": {
+      "type": "parameter",
+      "datatype": "bool",
+      "description": "Add a FluentValidation validator. The project needs Vitreous.FluentValidation.",
+      "defaultValue": "false"
+    },
+    "itemNamespace": {
+      "type": "parameter",
+      "datatype": "text",
+      "description": "The namespace. Defaults to the project's root namespace plus the folder you run the command in.",
+      "defaultValue": ""
+    },
+    "BaseName": {
+      "type": "derived",
+      "valueSource": "name",
+      "valueTransform": "baseName",
+      "replaces": "MessageName",
+      "fileRename": "MessageName"
+    },
+    "HasResult": { "type": "computed", "value": "(result != \"\")" },
+    "ResponseName": {
+      "type": "generated",
+      "generator": "join",
+      "parameters": {
+        "symbols": [
+          { "type": "ref", "value": "BaseName" },
+          { "type": "const", "value": "Response" }
+        ]
+      }
+    },
+    "ResultOrResponse": {
+      "type": "generated",
+      "generator": "coalesce",
+      "parameters": { "sourceVariableName": "result", "fallbackVariableName": "ResponseName" },
+      "replaces": "ResultType"
+    },
+    "ProjectRootNamespace": { "type": "bind", "binding": "msbuild:RootNamespace", "defaultValue": "" },
+    "ProjectDirectory": { "type": "bind", "binding": "msbuild:MSBuildProjectDirectory", "defaultValue": "" },
+    "WorkingDirectory": { "type": "bind", "binding": "host:WorkingDirectory", "defaultValue": "" },
+    "ImplicitUsings": { "type": "bind", "binding": "msbuild:ImplicitUsings", "defaultValue": "disable" },
+    "Directories": {
+      "type": "generated",
+      "generator": "join",
+      "parameters": {
+        "symbols": [
+          { "type": "ref", "value": "ProjectDirectory" },
+          { "type": "const", "value": "|" },
+          { "type": "ref", "value": "WorkingDirectory" }
+        ]
+      }
+    },
+    "FolderPath": {
+      "type": "generated",
+      "generator": "regex",
+      "parameters": {
+        "source": "Directories",
+        "steps": [
+          { "regex": "(?i)^([^|]+)\\|\\1(?:[\\\\/](.*))?$", "replacement": "$2" },
+          { "regex": "^.*\\|.*$", "replacement": "" },
+          { "regex": "[\\\\/]+", "replacement": "." }
+        ]
+      }
+    },
+    "FolderNamespace": {
+      "type": "generated",
+      "generator": "join",
+      "parameters": {
+        "separator": ".",
+        "removeEmptyValues": true,
+        "symbols": [
+          { "type": "ref", "value": "ProjectRootNamespace" },
+          { "type": "ref", "value": "FolderPath" }
+        ]
+      }
+    },
+    "FallbackNamespace": { "type": "generated", "generator": "constant", "parameters": { "value": "MyApp" } },
+    "FolderNamespaceOrFallback": {
+      "type": "generated",
+      "generator": "coalesce",
+      "parameters": { "sourceVariableName": "FolderNamespace", "fallbackVariableName": "FallbackNamespace" }
+    },
+    "SafeFolderNamespace": { "type": "derived", "valueSource": "FolderNamespaceOrFallback", "valueTransform": "safe_namespace" },
+    "Namespace": {
+      "type": "generated",
+      "generator": "coalesce",
+      "parameters": { "sourceVariableName": "itemNamespace", "fallbackVariableName": "SafeFolderNamespace" },
+      "replaces": "ItemNamespace"
+    },
+    "AddSystemUsings": { "type": "computed", "value": "(ImplicitUsings != \"enable\" && ImplicitUsings != \"true\")" }
+  },
+  "primaryOutputs": [ { "path": "MessageName.cs" } ]
+}

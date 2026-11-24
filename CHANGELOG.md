@@ -15,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `dotnet new vitreous-console` creates a command-line app on the .NET Generic Host: it sends each command or query from a scope, and a failed `Result` becomes an exit code. Options: `--validation` and `--tests`.
 - `dotnet new vitreous-worker` creates a worker service: a `BackgroundService` polls on a `PeriodicTimer` and opens a scope per unit of work, survives failed and throwing handlers, stops cleanly, and is tested with a fake `TimeProvider`. Options: `--validation`, `--caching none|memory|redis` and `--tests`.
 - `dotnet new vitreous-clean` creates a layered solution: Domain (an `Order` aggregate, value objects and domain events), Application (use cases on EF Core through an `IAppDbContext`), Infrastructure (EF Core with SQLite, which publishes the domain events after saving) and a host picked with `--host api|console|worker`. Its tests cover each layer, and the dependency rule between them. Options: `--validation`, `--devui` (API only), `--caching none|memory|redis` and `--tests`.
+- Item templates, for a project that already uses Vitreous: `dotnet new vitreous-command`, `vitreous-query`, `vitreous-notification` and `vitreous-behavior`. `-n PlaceOrder` creates `PlaceOrder.cs` with `PlaceOrderCommand` and `PlaceOrderHandler`, in the namespace of the folder you run the command in. Options: `--result <type>` and `--validation` (command and query), `--handler false` (notification) and `--namespace`.
 
 ### Changed
 

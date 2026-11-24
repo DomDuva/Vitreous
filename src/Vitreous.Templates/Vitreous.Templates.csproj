@@ -4,8 +4,13 @@
     The dotnet new template pack. Nothing is compiled: the package carries the templates under
     content/, staged at pack time (see StageTemplates below).
 
-      content/<template>/       one folder per template, with .template.config/template.json
-      content-shared/common/    copied into the root of every template while staging
+      content/<template>/       one folder per project template, with .template.config/template.json
+      content/items/<template>/ one folder per item template
+      content-shared/common/    copied into the root of every project template while staging
+
+    An item template puts its file in a namespace like the IDEs do: the project's root namespace
+    plus the folder that dotnet new runs in. Its template.json joins the project directory and the
+    working directory as "project|working", and a regex keeps what follows the first in the second.
 
     The template content is not part of Vitreous.slnx and can't be built in the repo: it references
     the Vitreous packages by version. CI installs the packed templates, creates every template and
@@ -15,7 +20,7 @@
     <TargetFramework>net8.0</TargetFramework>
     <PackageId>Vitreous.Templates</PackageId>
     <Title>Vitreous templates</Title>
-    <Description>dotnet new templates for Vitreous: a minimal API, a console app and a worker service in vertical slices, and a layered Clean Architecture solution, with validation, caching and tests.</Description>
+    <Description>dotnet new templates for Vitreous: a minimal API, a console app and a worker service in vertical slices, and a layered Clean Architecture solution, with validation, caching and tests. Item templates add a command, a query, a notification or a pipeline behavior.</Description>
     <PackageTags>dotnet-new;templates;mediator;cqrs;vertical-slices;clean-architecture;ddd;minimal-api;console;worker</PackageTags>
     <IsPackable>true</IsPackable>
     <PackageType>Template</PackageType>
@@ -45,17 +50,19 @@
   </PropertyGroup>
 
   <!--
-    Copies content/ to obj/templates/, adds the content-shared/common/ files to every template,
-    and writes the package version into each template.json (VITREOUS_PACKAGE_VERSION, the
+    Copies content/ to obj/templates/, adds the content-shared/common/ files to every project
+    template, and writes the package version into its template.json (VITREOUS_PACKAGE_VERSION, the
     default of the vitreous-version parameter). Generated projects then reference the exact
     Vitreous release the templates shipped with. Runs on dotnet pack, with or without a build.
+    Item templates (content/items/) are copied as they are.
   -->
   <Target Name="StageTemplates" DependsOnTargets="MinVer">
     <RemoveDir Directories="$(TemplateStagingDir)" />
 
     <ItemGroup>
       <_TemplateFile Include="content/**" Exclude="content/**/bin/**;content/**/obj/**" />
-      <_TemplateName Include="$([System.IO.Directory]::GetDirectories('$(MSBuildProjectDirectory)/content'))" />
+      <_TemplateName Include="$([System.IO.Directory]::GetDirectories('$(MSBuildProjectDirectory)/content'))"
+                     Exclude="$(MSBuildProjectDirectory)/content/items" />
       <_SharedFile Include="content-shared/common/**" />
       <!-- One item per (template, shared file) pair: batching over _TemplateName. -->
       <_SharedCopy Include="@(_SharedFile)" Template="%(_TemplateName.Filename)" />

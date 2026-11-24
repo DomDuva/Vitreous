@@ -8,7 +8,7 @@ using VitreousConsole._1.Common;
 namespace VitreousConsole._1.Features.Todos;
 
 // A vertical slice: the command, its validator, its handler and its verb live in one file, so a
-// feature is read, changed or deleted in one place. Add the next one with:
+// feature is read, changed or deleted in one place. Add the next one from its folder with:
 //   dotnet new vitreous-command -n <Name>
 
 public sealed record CreateTodoCommand(string Title) : ICommand<TodoDto>;
